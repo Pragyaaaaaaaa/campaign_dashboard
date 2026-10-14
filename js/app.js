@@ -68,10 +68,14 @@ function renderTop(){
   $('#fd').onchange=e=>setSel(S.prov,e.target.value===''?null:+e.target.value);
   $('#fm').onchange=e=>setSel(S.prov,S.dist,e.target.value===''?null:+e.target.value);
   $('#fw').onchange=e=>setSel(S.prov,S.dist,S.mun,e.target.value===''?null:+e.target.value);
-  $('#scopetag').textContent=levelName();
+  $('#scopetag').textContent=levelName();const at=$('#areaTxt');if(at)at.textContent=levelName();
 }
 $('#reset').onclick=()=>setSel();
+const areaOpen=on=>{const c=$('.controls');c.classList.toggle('open',on);$('#areaBtn').setAttribute('aria-expanded',on);layoutTop()};
+$('#areaBtn').onclick=()=>areaOpen(!$('.controls').classList.contains('open'));
+$('#areaDone').onclick=()=>areaOpen(false);
 async function setSel(p=null,d=null,m=null,w=null){
+  if(m!=null&&typeof mobile==='function'&&mobile()&&S.sheet==='peek')setSheet('half');
   S.prov=p;S.dist=p==null?null:d;S.mun=S.dist==null?null:m;S.ward=S.mun==null?null:w;S.sel=null;S.type=null;S.filter='all';
   $('#card').hidden=true;
   renderTop();await drawGeo();renderSide();
@@ -118,7 +122,7 @@ async function drawGeo(){
     let fs;
     if(S.dist!=null){const dj=await getJSON(`data/dist/${S.dist}.json`);if(my!==busy)return;fs=dj.features.map(f=>({...f,properties:{k:'m',id:f.properties.id,n:f.properties.n}}))}
     else fs=BND.features.filter(f=>S.prov==null&&S.layer==='off'?f.properties.k==='p':(f.properties.k==='d'&&(S.prov==null||f.properties.p===S.prov)));
-    admGeo=L.geoJSON({type:'FeatureCollection',features:fs},{style:styleFor,onEachFeature:(f,l)=>{
+    admGeo=L.geoJSON({type:'FeatureCollection',features:fs},{style:styleFor,bubblingMouseEvents:false,onEachFeature:(f,l)=>{
       const pr=f.properties,e=pr.k==='p'?P[pr.c]:pr.k==='d'?D[pr.c]:M[pr.id];
       l.bindTooltip(()=>{const v=lvOf(pr);return `<span class="admtip">${pr.k==='m'?mname(e):pr.n}</span><br>${nf(e.t)} people${v?`<br><i class="sw" style="background:${v.c}"></i> ${esc(v.t)}`:''}`},{sticky:true});
       hover(l,f);
@@ -132,7 +136,7 @@ async function drawGeo(){
   }else{
     MF=mcache[S.mun]||(mcache[S.mun]=await getJSON(`data/mun/${S.mun}.json`));if(my!==busy)return;
     const m=M[S.mun];
-    wardGeo=L.geoJSON(MF.wards,{style:f=>wardStyle(f.properties.no),onEachFeature:(f,l)=>{const w=m.w.find(x=>x.no===f.properties.no);
+    wardGeo=L.geoJSON(MF.wards,{style:f=>wardStyle(f.properties.no),bubblingMouseEvents:false,onEachFeature:(f,l)=>{const w=m.w.find(x=>x.no===f.properties.no);
         l.bindTooltip(`<span class="admtip">Ward ${w.no}</span><br>${nf(w.t)} people`,{sticky:true});
         if(S.ward==null)l.bindTooltip(String(w.no),{permanent:true,direction:'center',className:'wlbl'});
         l.on('mouseover',()=>l.setStyle({weight:1.8,color:'#16202a',opacity:1}));l.on('mouseout',()=>l.setStyle(wardStyle(f.properties.no)));
@@ -459,10 +463,10 @@ function renderSelbar(){
   }else{
     let v=0;S.pick.forEach(i=>{if(W.b[i].v)v++});
     el.innerHTML=`<span><b class="num">${nf(n)}</b> selected <small>(${nf(v)} visited)</small></span>
-      <button class="btn sm" id="sbV">Mark visited</button><button class="btn ghost sm" id="sbN">Not visited</button><button class="btn ghost sm" id="sbR">Plan route</button><button class="btn ghost sm" id="sbC">Clear</button>${done}`;
+      <button class="btn sm" id="sbV">Mark visited</button><button class="btn ghost sm" id="sbN">Not visited</button><button class="btn ghost sm" id="sbR">Plan route</button><button class="btn ghost sm" id="sbE">Export</button><button class="btn ghost sm" id="sbC">Clear</button>${done}`;
   }
   const on=(id,f)=>{const b=$(id);if(b)b.onclick=f};
-  on('#sbV',()=>bulk(true));on('#sbN',()=>bulk(false));on('#sbR',()=>routeFromPick());
+  on('#sbV',()=>bulk(true));on('#sbN',()=>bulk(false));on('#sbR',()=>routeFromPick());on('#sbE',()=>openReport('sel'));
   on('#sbC',()=>{S.pick.clear();S.undo=null;syncAll();renderSelbar()});on('#sbDone',()=>{S.undo=null;lassoMode(false)});on('#sbUndo',undoBulk);
 }
 function bulk(v){
@@ -705,17 +709,39 @@ function gpTile(x,y){
   return GPC[k]=(async()=>{try{const r=await fetch(POI_URL.replace('{z}',14).replace('{x}',x).replace('{y}',y));if(!r.ok)return[];const buf=await r.arrayBuffer();return buf.byteLength?mvtPois(buf,14,x,y):[]}catch(e){delete GPC[k];return[]}})();
 }
 const tileXY=(lng,lat)=>[Math.floor((lng+180)/360*16384),Math.floor((1-Math.asinh(Math.tan(lat*Math.PI/180))/Math.PI)/2*16384)];
-/* places in the current view; finer ranks only appear as you zoom in, like the Galli Maps style */
+function selGeom(){
+  const f=(k,c)=>(BND.features.find(x=>x.properties.k===k&&x.properties.c===c)||{}).geometry;
+  if(S.ward!=null)return MF&&(MF.wards.find(x=>x.properties.no===S.ward)||{}).geometry;
+  if(S.mun!=null)return MF&&MF.outline;
+  if(S.dist!=null)return f('d',S.dist);
+  if(S.prov!=null)return f('p',S.prov);
+  return null;
+}
+let GAkey='';
+/* places inside the selected boundary (ward, municipality, district); with no boundary, the map view */
 async function updateGP(){
   const my=++gpBusy;
-  if(!S.showPoi||map.getZoom()<14){poiL.clearLayers();GV=[];GA=[];renderPoiPanel();return}
-  const bd=map.getBounds(),[x0,y0]=tileXY(bd.getWest(),bd.getNorth()),[x1,y1]=tileXY(bd.getEast(),bd.getSouth());
-  if((x1-x0+1)*(y1-y0+1)>9){poiL.clearLayers();GV=[];GA=[];renderPoiPanel();return}
-  const ts=[];for(let x=x0;x<=x1;x++)for(let y=y0;y<=y1;y++)ts.push(gpTile(x,y));
-  const seen=new Set(),all=(await Promise.all(ts)).flat().filter(o=>{const k=o.n+o.x.toFixed(5)+o.y.toFixed(5);if(seen.has(k))return false;seen.add(k);return true});if(my!==gpBusy)return;
-  const z=map.getZoom();
-  GA=all.filter(o=>o.n&&o.x>=bd.getWest()&&o.x<=bd.getEast()&&o.y>=bd.getSouth()&&o.y<=bd.getNorth());
-  GV=GA.filter(o=>o.r<=z+1);
+  const off=sc=>{poiL.clearLayers();GV=[];GA=[];GAkey='';S.gscope=sc;renderPoiPanel()};
+  if(!S.showPoi){off('view');return}
+  const g=selGeom(),bd=map.getBounds(),z=map.getZoom(),n=a=>(a[2]-a[0]+1)*(a[3]-a[1]+1);
+  let a=null,area=false;
+  if(g&&ext){a=[...tileXY(ext[0],ext[3]),...tileXY(ext[2],ext[1])];area=n(a)<=25}
+  if(!area){
+    if(z<14){off('view');return}
+    a=[...tileXY(bd.getWest(),bd.getNorth()),...tileXY(bd.getEast(),bd.getSouth())];
+    if(n(a)>9){off('view');return}
+  }
+  S.gscope=area?'area':'view';
+  const key=[S.prov,S.dist,S.mun,S.ward,area?'a':a.join()].join('|');
+  if(key!==GAkey){
+    const ts=[];for(let x=a[0];x<=a[2];x++)for(let y=a[1];y<=a[3];y++)ts.push(gpTile(x,y));
+    const seen=new Set();
+    let all=(await Promise.all(ts)).flat().filter(o=>{if(!o.n)return false;const k=o.n+o.x.toFixed(5)+o.y.toFixed(5);if(seen.has(k))return false;seen.add(k);return true});
+    if(my!==gpBusy)return;
+    if(g){const b=ext||[-180,-90,180,90];all=all.filter(o=>o.x>=b[0]&&o.x<=b[2]&&o.y>=b[1]&&o.y<=b[3]&&inGeom(o.x,o.y,g))}
+    GA=all;GAkey=key;
+  }
+  GV=area?GA:GA.filter(o=>o.r<=z+1&&o.x>=bd.getWest()&&o.x<=bd.getEast()&&o.y>=bd.getSouth()&&o.y<=bd.getNorth());
   drawGP();renderPoiPanel();
 }
 const gpCanvas=()=>S.gcv||(S.gcv=L.canvas({padding:.3,tolerance:6}));
@@ -881,7 +907,8 @@ function visitsHTML(){
   const c=cur();
   if(!(W&&W.b.length)){
     return `<div class="stats" style="width:100%"><div class="stat"><small>Buildings mapped</small><b class="num">${nf(sumW('nb'))}</b></div><div class="stat"><small>Wards</small><b class="num">${nf(wardsIn().length)}</b></div></div>
-      <div class="hint2">${c.k==='ward'?'No building footprints for this ward.':'Pick a ward to track household visits, select houses and plan a route.'}</div>`;
+      <div class="hint2">${c.k==='ward'?'No building footprints for this ward.':'Click a ward on the map to track household visits, select houses and plan a route.'}</div>
+      ${S.mun!=null||S.dist!=null?'<div class="btnrow"><button class="btn ghost sm" id="exp">Export field notes</button></div>':''}`;
   }
   const st=stats(),circ=2*Math.PI*34;
   return `<div class="prog-top"><div class="ring"><svg viewBox="0 0 84 84" width="84" height="84"><circle class="t" cx="42" cy="42" r="34"/><circle class="f" cx="42" cy="42" r="34" stroke-dasharray="${circ}" stroke-dashoffset="${circ*(1-st.c/100)}"/></svg><b class="num">${st.c.toFixed(0)}%</b></div>
@@ -906,20 +933,21 @@ function pListHTML(){
 }
 function placesHTML(){
   if(!S.showPoi)return `<div class="hint2">See schools, health facilities, places of worship, offices and shops from Galli Maps around the area you are looking at.</div><div class="btnrow"><button class="btn sm" id="pOn">Show places on the map</button></div>`;
-  if(map.getZoom()<14)return `<div class="hint2">Zoom in to street level to load places.</div><div class="btnrow"><button class="btn sm" id="pZoom">Zoom in</button></div>`;
-  if(!GA.length)return '<div class="src">Loading places…</div>';
+  if(S.gscope!=='area'&&map.getZoom()<14)return `<div class="hint2">Zoom in to street level to load places.</div><div class="btnrow"><button class="btn sm" id="pZoom">Zoom in</button></div>`;
+  if(!GA.length)return `<div class="src">${GAkey?'No places found here.':'Loading places…'}</div>`;
   const cnt={},types={};GA.forEach(o=>{cnt[o.g]=(cnt[o.g]||0)+1});
   GA.filter(o=>S.gcats.has(o.g)).forEach(o=>{const t=o.s||o.c;if(t)types[t]=(types[t]||0)+1});
   const gk=Object.keys(GG).filter(k=>cnt[k]).sort((a,z)=>cnt[z]-cnt[a]),mx=Math.max(...gk.map(k=>cnt[k]),1);
   const tk=Object.entries(types).sort((a,z)=>z[1]-a[1]).slice(0,14);
-  return `<div class="mini"><div><small>Places in view</small><b class="num">${nf(GA.length)}</b></div><div><small>Selected types</small><b class="num">${nf(GA.filter(o=>S.gcats.has(o.g)).length)}</b></div></div>
+  return `<div class="mini"><div><small>${S.gscope==='area'?'Places in area':'Places in view'}</small><b class="num">${nf(GA.length)}</b></div><div><small>Selected types</small><b class="num">${nf(GA.filter(o=>S.gcats.has(o.g)).length)}</b></div></div>
+   ${S.gscope==='area'?`<div class="src">Only places inside the ${esc(levelName())} boundary.</div>`:''}
    <div><div class="lbl">By group · tap to show or hide</div>${gk.map(k=>`<button class="gbar ${S.gcats.has(k)?'':'off'}" data-cat="${k}"><span class="gn"><i style="background:${GG[k][1]}"></i>${GG[k][0]}</span><span class="bar"><i style="width:${cnt[k]/mx*100}%;background:${GG[k][1]}"></i></span><span class="num">${nf(cnt[k])}<small>${pct0(cnt[k]/GA.length)}</small></span></button>`).join('')}</div>
    ${tk.length?`<div><div class="lbl">Types${S.gtype?` · <button class="linkbtn" id="gtClear">clear “${esc(S.gtype)}”</button>`:''}</div><div class="chips">${tk.map(([t,n])=>`<button class="chip ${S.gtype===t?'on':''}" data-gt="${esc(t)}">${esc(t.replace(/_/g,' '))} <span class="num">${nf(n)}</span></button>`).join('')}</div></div>`:''}
    <div><div class="lbl">List · nearest first · tap to see on the map</div><input class="field" id="pq" type="search" placeholder="Filter by name or address" value="${esc(S.gq||'')}" autocomplete="off"><div id="plist">${pListHTML()}</div></div>
    <div class="btnrow"><button class="btn ghost sm" id="pCsv">Download list</button></div>`;
 }
 function placesCSV(){
-  const rows=[['Places in the map view'],[],...contribRows(),['Area',levelName()],['Name','Group','Type','Address','Latitude','Longitude']];
+  const rows=[[S.gscope==='area'?'Places in the selected area':'Places in the map view'],[],...contribRows(),['Area',levelName()],['Name','Group','Type','Address','Latitude','Longitude']];
   pFiltered().sort((a,z)=>gDist(a)-gDist(z)).forEach(o=>rows.push([o.n,GG[o.g][0],o.s||o.c,o.a,o.y.toFixed(6),o.x.toFixed(6)]));
   download('places.csv',toCSV(rows),'text/csv');
 }
@@ -946,7 +974,7 @@ function renderSide(){
   side.querySelectorAll('[data-bt]').forEach(b=>b.onclick=()=>{const m=M[+b.dataset.bt];setSel(m.p,m.d,m.id)});
   side.querySelectorAll('[data-rs]').forEach(b=>b.onclick=()=>routeStop(+b.dataset.rs,b.dataset.act));
   const on=(id,f)=>{const b=$(id);if(b)b.onclick=f};
-  on('#exp',openReport);on('#vSel',()=>lassoMode(!S.lasso));on('#rNear',()=>routeNearest(+$('#rN').value));
+  on('#exp',()=>openReport());on('#vSel',()=>lassoMode(!S.lasso));on('#rNear',()=>routeNearest(+$('#rN').value));
   on('#rRev',routeReverse);on('#rClr',routeClear);on('#rCsv',routeCSV);on('#rMap',routeMaps);
   grabInit();renderLegend();if(S.tab==='places')placesBind();const tl=$('#tl');if(tl)tl.classList.toggle('on',S.tab==='places');
 }
@@ -966,38 +994,97 @@ const mobile=()=>matchMedia('(max-width:768px)').matches;
 const contribRows=()=>{const w=who();return [['Contributed by'],['Name',w.name||''],['Role / organisation',w.role||''],['Exported on',new Date().toLocaleString('en-GB')],[]]};
 function toCSV(rows){return '﻿'+rows.map(r=>r.map(x=>{x=String(x==null?'':x);return /[",\n]/.test(x)?'"'+x.replace(/"/g,'""')+'"':x}).join(',')).join('\r\n')}
 function download(name,text,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type:type+';charset=utf-8'}));a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},500)}
-const RCOLS=['Building ID','Ward','Status','Visit date','Note','Contributed by'];
-const rrow=b=>[b.id,W.w.no,b.v?'Visited':'Not visited',b.date||'',b.rem||'',(b.rem||b.v)?(b.rem?b.by:b.vby)||who().name:''];
-function reportRows(){const sc=$('#rscope').value;return W.b.filter(b=>sc==='all'||(sc==='v'&&b.v)||(sc==='n'&&!b.v))}
-function contributors(rows){const m={};rows.forEach(b=>{const n=b.rem?b.by:b.v?b.vby:'';if(n)m[n]=(m[n]||0)+1});return Object.entries(m).sort((a,b)=>b[1]-a[1])}
-function renderReport(){
-  const rows=reportRows(),st=stats();
-  $('#mscope').textContent=`${levelName()} · ${nf(rows.length)} households · ${st.c.toFixed(1)}% visited`;
-  $('#prev').innerHTML=`<table><thead><tr>${RCOLS.map(c=>`<th>${c}</th>`).join('')}</tr></thead><tbody>${rows.slice(0,5).map(b=>`<tr>${rrow(b).map((v,i)=>`<td class="${i===4?'rem':''}">${esc(v)||'—'}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+const wide=a=>a==='mun'||a==='dist';
+const RCOLS=wd=>['Building ID','Ward',...(wd?['Municipality']:[]),'Status','Visit date','Note','Contributed by'];
+const repRow=(b,w,m)=>({id:b.id,ward:w.no,mun:mname(m),v:!!b.v,date:b.date||'',rem:b.rem||'',by:b.by||'',vby:b.vby||''});
+/* wider areas list the houses with a saved visit or note, read from this browser's saved records */
+function savedRows(a){
+  const out=[],ws=a==='dist'?(MD[S.dist]||[]).flatMap(m=>m.w.map(w=>({w,m}))):M[S.mun].w.map(w=>({w,m:M[S.mun]}));
+  ws.forEach(({w,m})=>{const sv=LS.get('gm_visits_'+w.id,{});for(const id in sv){const o=sv[id];out.push({id,ward:w.no,mun:mname(m),v:!!o.v,date:o.date||'',rem:o.rem||'',by:o.by||'',vby:o.vby||''})}});
+  return out;
 }
-function openReport(){const w=who();$('#cname').value=w.name;$('#crole').value=w.role;$('#modal').hidden=false;renderReport()}
-$('#rscope').onchange=renderReport;
+const areaLabel=a=>a==='sel'?`${levelName()} · selected houses`:a==='ward'?levelName():a==='mun'?mname(M[S.mun]):D[S.dist].n+' District';
+function areaOpts(){
+  const o=[];
+  if(W&&S.pick.size)o.push(['sel',`Selected houses (${S.pick.size})`]);
+  if(W)o.push(['ward',`This ward (Ward ${W.w.no})`]);
+  if(S.mun!=null)o.push(['mun',`Whole municipality · ${mname(M[S.mun])}`]);
+  if(S.dist!=null)o.push(['dist',`Whole district · ${D[S.dist].n}`]);
+  return o;
+}
+const rrow=(r,wd)=>[r.id,r.ward,...(wd?[r.mun]:[]),r.v?'Visited':'Not visited',r.date,r.rem,(r.rem||r.v)?(r.rem?r.by:r.vby)||who().name:''];
+function reportRows(){
+  const a=$('#rarea').value,sc=$('#rscope').value;let rows;
+  if(a==='sel')rows=[...S.pick].sort((x,y)=>x-y).map(i=>repRow(W.b[i],W.w,W.m));
+  else if(a==='ward')rows=W.b.map(b=>repRow(b,W.w,W.m));
+  else rows=savedRows(a);
+  return rows.filter(r=>sc==='all'||(sc==='v'&&r.v)||(sc==='n'&&!r.v));
+}
+function contributors(rows){const m={};rows.forEach(r=>{const n=r.rem?r.by:r.v?r.vby:'';if(n)m[n]=(m[n]||0)+1});return Object.entries(m).sort((a,b)=>b[1]-a[1])}
+const pctV=rows=>rows.length?(rows.filter(r=>r.v).length/rows.length*100).toFixed(1):'0.0';
+function renderReport(){
+  const a=$('#rarea').value,wd=wide(a),rows=reportRows(),C=RCOLS(wd),ni=C.indexOf('Note');
+  $('#mscope').textContent=`${areaLabel(a)} · ${nf(rows.length)} households · ${pctV(rows)}% visited`;
+  $('#rhint').textContent=wd?'For areas with several wards, only houses with a saved visit or note are listed.':'';
+  $('#prev').innerHTML=`<table><thead><tr>${C.map(c=>`<th>${c}</th>`).join('')}</tr></thead><tbody>${rows.slice(0,5).map(r=>`<tr>${rrow(r,wd).map((v,i)=>`<td class="${i===ni?'rem':''}">${esc(v)||'—'}</td>`).join('')}</tr>`).join('')||`<tr><td colspan="${C.length}">Nothing to export for this choice.</td></tr>`}</tbody></table>`;
+}
+function openReport(pref){
+  const o=areaOpts();if(!o.length){toast('Pick a ward or municipality first');return}
+  $('#rarea').innerHTML=o.map(([k,l])=>`<option value="${k}">${esc(l)}</option>`).join('');
+  $('#rarea').value=typeof pref==='string'&&o.some(x=>x[0]===pref)?pref:o[0][0];
+  const w=who();$('#cname').value=w.name;$('#crole').value=w.role;$('#modal').hidden=false;renderReport();
+}
+$('#rarea').onchange=renderReport;$('#rscope').onchange=renderReport;
 ['#mclose','#mcancel'].forEach(s=>$(s).onclick=()=>$('#modal').hidden=true);
 $('#modal').addEventListener('click',e=>{if(e.target.id==='modal')$('#modal').hidden=true});
 $('#mgen').onclick=()=>{
   const name=$('#cname').value.trim();if(!name){$('#cname').focus();toast('Add the name of the person contributing');return}
+  const a=$('#rarea').value,wd=wide(a),C=RCOLS(wd),rows=reportRows();
+  if(!rows.length){toast('Nothing to export for this choice');return}
   S.who={name,role:$('#crole').value.trim()};LS.set('gm_who',S.who);
-  const rows=reportRows(),st=stats(),when=new Date().toLocaleString('en-GB'),by=contributors(rows),fmt=$('#rfmt').value;
-  const meta=[['Area',levelName()],['Households in this report',rows.length],['Visited',`${st.v} of ${st.t} (${st.c.toFixed(1)}%)`],['Generated',when]];
+  const when=new Date().toLocaleString('en-GB'),by=contributors(rows),fmt=$('#rfmt').value,vis=rows.filter(r=>r.v).length;
+  const meta=[['Area',areaLabel(a)],['Households in this report',rows.length],['Visited',`${vis} of ${rows.length} (${pctV(rows)}%)`],['Generated',when]];
   const cb=[['Name',name],['Role / organisation',S.who.role||'—'],...by.map(([n,k])=>['Entries by '+n,k])];
+  const slug=(a==='ward'?'ward-'+W.w.no:a==='sel'?'selected-houses-ward-'+W.w.no:a==='mun'?mname(M[S.mun]):D[S.dist].n+'-district').toLowerCase().replace(/[^a-z0-9]+/g,'-');
   if(fmt==='CSV'){
-    download(`field-notes-ward-${W.w.no}.csv`,toCSV([['Field notes'],[],['Contributed by'],...cb,[],...meta,[],RCOLS,...rows.map(rrow)]),'text/csv');
+    download(`field-notes-${slug}.csv`,toCSV([['Field notes'],[],['Contributed by'],...cb,[],...meta,[],C,...rows.map(r=>rrow(r,wd))]),'text/csv');
     toast('Field notes downloaded');
   }else{
     const w=window.open('','_blank');if(!w){toast('Allow pop-ups to print the report');return}
-    const kv=a=>a.map(([k,v])=>`<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join('');
-    w.document.write(`<!doctype html><meta charset="utf-8"><title>Field notes · ${esc(levelName())}</title><style>body{font:13px/1.4 system-ui,sans-serif;margin:28px;color:#16202a}h1{font-size:20px;margin:0 0 4px}h2{font-size:14px;margin:22px 0 6px}table{border-collapse:collapse;width:100%}th,td{border-bottom:1px solid #ccd;padding:5px 8px;text-align:left;vertical-align:top}.kv th{width:210px;color:#5a6673;font-weight:600}.t th{background:#f2f4f6;font-size:11px;text-transform:uppercase}</style>
+    const kv=x=>x.map(([k,v])=>`<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join('');
+    w.document.write(`<!doctype html><meta charset="utf-8"><title>Field notes · ${esc(areaLabel(a))}</title><style>body{font:13px/1.4 system-ui,sans-serif;margin:28px;color:#16202a}h1{font-size:20px;margin:0 0 4px}h2{font-size:14px;margin:22px 0 6px}table{border-collapse:collapse;width:100%}th,td{border-bottom:1px solid #ccd;padding:5px 8px;text-align:left;vertical-align:top}.kv th{width:210px;color:#5a6673;font-weight:600}.t th{background:#f2f4f6;font-size:11px;text-transform:uppercase}</style>
       <h1>Field notes</h1><h2>Contributed by</h2><table class="kv">${kv(cb)}</table><h2>Report</h2><table class="kv">${kv(meta)}</table>
-      <h2>Households</h2><table class="t"><thead><tr>${RCOLS.map(c=>`<th>${c}</th>`).join('')}</tr></thead><tbody>${rows.map(b=>`<tr>${rrow(b).map(v=>`<td>${esc(v)||'—'}</td>`).join('')}</tr>`).join('')}</tbody></table>`);
+      <h2>Households</h2><table class="t"><thead><tr>${C.map(c=>`<th>${c}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${rrow(r,wd).map(v=>`<td>${esc(v)||'—'}</td>`).join('')}</tr>`).join('')}</tbody></table>`);
     w.document.close();w.focus();setTimeout(()=>w.print(),300);
   }
   $('#modal').hidden=true;
 };
+
+/* ---------- pick by clicking the map: ward, municipality, district (no filter reset needed) ---------- */
+const distCache={};
+function ringHas(r,x,y){let c=false;for(let i=0,j=r.length-1;i<r.length;j=i++){const a=r[i],b=r[j];if((a[1]>y)!==(b[1]>y)&&x<(b[0]-a[0])*(y-a[1])/(b[1]-a[1])+a[0])c=!c}return c}
+const polyHas=(rings,x,y)=>ringHas(rings[0],x,y)&&!rings.slice(1).some(r=>ringHas(r,x,y));
+function inGeom(x,y,g){return !!g&&(g.type==='Polygon'?polyHas(g.coordinates,x,y):g.type==='MultiPolygon'?g.coordinates.some(p=>polyHas(p,x,y)):false)}
+async function findMunAt(x,y){
+  const tryDist=async c=>{const dj=distCache[c]||(distCache[c]=await getJSON(`data/dist/${c}.json`));const f=dj.features.find(f=>inGeom(x,y,f.geometry));return f?M[f.properties.id]:null};
+  let m=S.dist!=null?await tryDist(S.dist):null;if(m)return m;
+  const df=BND.features.find(f=>f.properties.k==='d'&&inGeom(x,y,f.geometry));
+  return df?tryDist(df.properties.c):null;
+}
+async function pickAt(ll){
+  const x=ll.lng,y=ll.lat;
+  if(S.mun!=null&&MF){
+    const w=MF.wards.find(f=>inGeom(x,y,f.geometry));
+    if(w){if(w.properties.no!==S.ward)setSel(S.prov,S.dist,S.mun,w.properties.no);return}
+    const m=await findMunAt(x,y);
+    if(m&&m.id!==S.mun){const mf=mcache[m.id]||(mcache[m.id]=await getJSON(`data/mun/${m.id}.json`));const w2=mf.wards.find(f=>inGeom(x,y,f.geometry));setSel(m.p,m.d,m.id,w2?w2.properties.no:null)}
+    return;
+  }
+  if(admGeo){
+    let hit=null;admGeo.eachLayer(l=>{if(!hit&&inGeom(x,y,l.feature.geometry))hit=l.feature.properties});
+    if(hit)hit.k==='p'?setSel(hit.c):hit.k==='d'?setSel(S.prov??hit.p,hit.c):setSel(S.prov,S.dist,hit.id);
+  }
+}
 
 /* ---------- boot ---------- */
 async function init(){
@@ -1011,10 +1098,10 @@ async function init(){
   L.tileLayer(TILES,{maxZoom:19,attribution:'© Galli Maps'}).addTo(map);
   adm=L.layerGroup().addTo(map);wardL=L.layerGroup().addTo(map);ctxL=L.layerGroup().addTo(map);bldL=L.layerGroup().addTo(map);selL=L.layerGroup().addTo(map);poiL=L.layerGroup().addTo(map);routeL=L.layerGroup().addTo(map);lassoL=L.layerGroup().addTo(map);initLasso();
   map.on('moveend',updateContext);
-  map.on('click',e=>{if(S.sel!=null&&!e.originalEvent._b)closeCard()});
+  map.on('click',e=>{if(S.sel!=null&&!e.originalEvent._b){closeCard();return}if(!S.lasso)pickAt(e.latlng)});
   map.fitBounds([[26.3,80],[30.5,88.3]]);
   if(EL){PT=EL.parties;EL.ck.forEach((k,i)=>CI[k]=i);Object.entries(EL.mun).forEach(([id,r])=>EM[+id]=r);Object.entries(EL.d26).forEach(([c,x])=>ED[+c]=x)}
   else{S.layer='off';toast('Election data (data/elections.json) did not load.')}
-  setSheet('half');layoutTop();setTimeout(layoutTop,400);
+  setSheet(mobile()?'peek':'half');layoutTop();setTimeout(layoutTop,400);
   renderTop();await drawGeo();renderSide();layoutTop();
 }

@@ -116,3 +116,13 @@ Data limits: the source holds 2022 top-two candidates only, and 2017 up to four 
 ## Build 18 changes
 
 - New **Places** tab (also opened by the list button on the map): counts of places in the map view by group with bars and shares (tap a bar to show or hide that group on the map), the most common types as chips (tap to filter), a name/address filter, and a clickable list sorted by distance from you (or the map centre). Tapping a place zooms to it and opens its card. "Download list" saves the filtered list as CSV. The old floating places panel was removed.
+
+## Build 20 changes (phone)
+
+- Less clutter: the four filters, Colour by and search now sit behind one area button at the top. Tap it to change area, then Done. Zoom buttons and the places-list button are hidden on phones (pinch to zoom; places are in the Places tab). The legend is one row of chips under the area tag. The panel starts small on the country view and opens to half height once you pick a municipality, and it clears the browser's bottom toolbar.
+
+## Build 21 changes
+
+- **Click to switch area:** click or tap any ward on the map to jump to it, with no filter reset. Click a ward of a neighbouring municipality and it opens that municipality's ward directly. At district and country level, click inside any area (even in Outlines mode).
+- **Places by boundary:** with places on, the layer shows everything inside the selected ward, municipality or district boundary (not just the screen), at any zoom, and the Places tab counts and lists only those. For very large areas it falls back to the map view at street zoom.
+- **Export by selection or boundary:** the field notes export has an Area choice: selected houses, this ward, the whole municipality or the whole district. Selected houses also have an Export button in the selection bar, and municipality and district views have an Export button in the Visits tab. For several wards, the export lists houses with a saved visit or note (read from this browser) and adds a Municipality column.
