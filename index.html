@@ -1,0 +1,149 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1f4e79">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/logo.svg">
+<link rel="apple-touch-icon" href="icons/logo.svg">
+<title>Campaign Dashboard</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Martel:wght@700;800&family=Mukta:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="css/styles.css?v=16">
+</head>
+<body>
+
+<div id="login" class="login">
+  <section class="login-art">
+    <div id="artlogo"></div>
+    <h2>Know every galli<br>of your ward</h2>
+    <p>Plan household visits. Track outreach. Read the ward.</p>
+  </section>
+  <section class="login-form">
+    <form class="login-card" id="loginForm" autocomplete="off">
+      <h1>Candidate Sign In</h1>
+      <div>
+        <label class="lbl" for="mobile">Mobile number</label>
+        <div class="phone"><span>+977</span><input class="field" id="mobile" inputmode="numeric" maxlength="10" placeholder="98XXXXXXXX"></div>
+      </div>
+      <button class="btn" id="sendOtp" type="button" disabled>Send OTP</button>
+      <div id="otpBlock" hidden style="display:flex;flex-direction:column;gap:14px">
+        <div>
+          <label class="lbl" for="o0">Enter the 6-digit code sent to <span id="sentTo" class="num"></span></label>
+          <div class="otp" id="otp"></div>
+        </div>
+        <button class="btn" id="verify" type="submit" disabled>Verify &amp; Sign In</button>
+        <div class="center"><span>Resend code in 0:30</span> · <button type="button" class="linkbtn" id="chg">Change number</button></div>
+      </div>
+      <div class="notice">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M11 18h2"/></svg>
+        <span>One device per account. Signing in here logs you out of any other phone or computer.</span>
+      </div>
+      <div class="center">Mockup: any 6 digits will work. <button type="button" class="linkbtn" id="skip">Skip to dashboard</button></div>
+    </form>
+  </section>
+</div>
+
+<div id="app" class="app" hidden>
+  <header class="top">
+    <div class="brand">
+      <div id="hdrlogo" aria-hidden="true"></div>
+      <h1>Campaign Dashboard</h1>
+    </div>
+    <div class="topr">
+      <div class="user">
+        <button class="userbtn" id="userbtn" aria-haspopup="true"><span>Sample Candidate</span><span class="avatar">SC</span></button>
+        <div class="menu" id="menu" hidden>
+          <b>Sample Candidate</b>
+          <span class="num" style="color:var(--muted)">+977 98&bull;&bull;&bull;&bull;&bull;567</span>
+          <div class="sess"><i class="dot"></i>Active on this device only</div>
+          <button class="btn ghost sm" id="logout">Log out</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <section class="controls" aria-label="Map controls">
+    <div class="filters" id="filters"></div>
+    <label class="ctl">Colour by <select id="layerSel"></select></label>
+    <div class="search">
+      <input id="q" type="search" placeholder="Find a municipality or place" autocomplete="off" aria-label="Search">
+      <div class="results" id="results" hidden></div>
+    </div>
+    <button class="linkbtn" id="reset" type="button">Reset</button>
+  </section>
+
+  <div class="work">
+    <div class="mapcol">
+      <div class="mapwrap" id="mapwrap">
+        <div id="map"></div>
+        <div class="scopetag" id="scopetag">Nepal</div>
+        <div class="ctrls">
+          <button id="zi" aria-label="Zoom in">+</button>
+          <button id="zo" aria-label="Zoom out">&minus;</button>
+          <button id="zr" aria-label="Reset view" title="Fit selected area"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="7"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg></button>
+          <span class="sep"></span>
+          <button id="tb" class="on" aria-label="Show or hide buildings" title="Hide buildings"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 21V9l8-5 8 5v12zM9 21v-6h6v6"/></svg></button>
+          <button id="tg" aria-label="My location" title="My location. Routes start from here"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/></svg></button>
+          <button id="tr" aria-label="Show or hide roads" title="Show roads"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 21 10 3M17 21 14 3M12 6v2M12 11v2M12 16v2"/></svg></button>
+          <button id="ts" aria-label="Select houses by drawing" title="Open a ward to select houses" disabled><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="3 2.4"><path d="M5 14c-2-4 1-9 7-9s9 4 7 8-6 6-10 6c-2 0-3-1-4-2z"/></svg></button>
+          <button id="tl" aria-label="Points of interest list" title="Points of interest list"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg></button>
+          <button id="tp" aria-label="Show or hide points of interest" title="Points of interest"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg></button>
+        </div>
+        <aside class="poipanel" id="poiPanel" hidden></aside>
+        <div class="hint" id="hint" hidden></div>
+        <div class="selbar" id="selbar" hidden></div>
+        <div class="legend" id="legend" hidden></div>
+        <div class="card" id="card" hidden></div>
+        <div class="loading" id="loading">Loading boundaries and election results…</div>
+      </div>
+      <div class="maplegend" id="maplegend"></div>
+      <div class="note-line" id="layernote"></div>
+    </div>
+    <aside class="side" id="side" aria-live="polite"></aside>
+  </div>
+
+  <details class="about">
+    <summary>About the data</summary>
+    <ul>
+      <li><b>Elections:</b> 2017 and 2022 local results, plus the March 2026 House vote by district. 2022 ward chair, member, women and Dalit women results list every candidate with votes for 752 local levels (collected from Kantipur's results pages). Mayor/chair and deputy are published for the top two candidates only in 2022; 2017 lists up to four per post and the rest as one line.</li>
+      <li><b>People:</b> Census 2021 by sex and age for every ward; 2022 registered voters per local level.</li>
+      <li><b>Map:</b> real boundaries, 9.46 million building footprints, health facilities and road lines from Galli Maps. Routes follow the road-line tiles.</li>
+      <li><b>Visits:</b> demo status to start with. Visits, notes and contributor name you enter are saved in this browser only.</li>
+    </ul>
+    <p class="src">Sources: Nepal Local Election Atlas (Election Commission, Kantipur), National Statistics Office, Galli Maps.</p>
+  </details>
+</div>
+
+<div class="overlay" id="modal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="mt">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+      <div><h2 id="mt">Export field notes</h2><div class="src" id="mscope"></div></div>
+      <button class="x" id="mclose" aria-label="Close">×</button>
+    </div>
+    <div class="opts">
+      <div><label class="lbl" for="rscope">Households to include</label>
+        <select class="field" id="rscope"><option value="all" selected>All households</option><option value="v">Visited only</option><option value="n">Not visited only</option></select></div>
+      <div><label class="lbl" for="rfmt">Format</label>
+        <select class="field" id="rfmt"><option>CSV</option><option>Print / PDF</option></select></div>
+    </div>
+    <fieldset class="contrib"><legend>Contributed by</legend>
+      <div class="opts">
+        <div><label class="lbl" for="cname">Name</label><input class="field" id="cname" autocomplete="name"></div>
+        <div><label class="lbl" for="crole">Role or organisation</label><input class="field" id="crole" placeholder="e.g. Ward volunteer"></div>
+      </div>
+    </fieldset>
+    <div class="tw" id="prev"></div>
+    <div class="mfoot"><button class="btn ghost" id="mcancel">Cancel</button><button class="btn" id="mgen">Download</button></div>
+  </div>
+</div>
+<div id="toast" hidden></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://unpkg.com/leaflet.vectorgrid@1.3.0/dist/Leaflet.VectorGrid.bundled.min.js"></script>
+<script src="js/app.js?v=16"></script>
+</body>
+</html>
