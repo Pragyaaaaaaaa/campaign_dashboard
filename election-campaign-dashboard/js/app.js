@@ -68,14 +68,10 @@ function renderTop(){
   $('#fd').onchange=e=>setSel(S.prov,e.target.value===''?null:+e.target.value);
   $('#fm').onchange=e=>setSel(S.prov,S.dist,e.target.value===''?null:+e.target.value);
   $('#fw').onchange=e=>setSel(S.prov,S.dist,S.mun,e.target.value===''?null:+e.target.value);
-  $('#scopetag').textContent=levelName();const at=$('#areaTxt');if(at)at.textContent=levelName();
+  $('#scopetag').textContent=levelName();
 }
 $('#reset').onclick=()=>setSel();
-const areaOpen=on=>{const c=$('.controls');c.classList.toggle('open',on);$('#areaBtn').setAttribute('aria-expanded',on);layoutTop()};
-$('#areaBtn').onclick=()=>areaOpen(!$('.controls').classList.contains('open'));
-$('#areaDone').onclick=()=>areaOpen(false);
 async function setSel(p=null,d=null,m=null,w=null){
-  if(m!=null&&typeof mobile==='function'&&mobile()&&S.sheet==='peek')setSheet('half');
   S.prov=p;S.dist=p==null?null:d;S.mun=S.dist==null?null:m;S.ward=S.mun==null?null:w;S.sel=null;S.type=null;S.filter='all';
   $('#card').hidden=true;
   renderTop();await drawGeo();renderSide();
@@ -122,7 +118,7 @@ async function drawGeo(){
     let fs;
     if(S.dist!=null){const dj=await getJSON(`data/dist/${S.dist}.json`);if(my!==busy)return;fs=dj.features.map(f=>({...f,properties:{k:'m',id:f.properties.id,n:f.properties.n}}))}
     else fs=BND.features.filter(f=>S.prov==null&&S.layer==='off'?f.properties.k==='p':(f.properties.k==='d'&&(S.prov==null||f.properties.p===S.prov)));
-    admGeo=L.geoJSON({type:'FeatureCollection',features:fs},{style:styleFor,bubblingMouseEvents:false,onEachFeature:(f,l)=>{
+    admGeo=L.geoJSON({type:'FeatureCollection',features:fs},{style:styleFor,onEachFeature:(f,l)=>{
       const pr=f.properties,e=pr.k==='p'?P[pr.c]:pr.k==='d'?D[pr.c]:M[pr.id];
       l.bindTooltip(()=>{const v=lvOf(pr);return `<span class="admtip">${pr.k==='m'?mname(e):pr.n}</span><br>${nf(e.t)} people${v?`<br><i class="sw" style="background:${v.c}"></i> ${esc(v.t)}`:''}`},{sticky:true});
       hover(l,f);
@@ -136,7 +132,7 @@ async function drawGeo(){
   }else{
     MF=mcache[S.mun]||(mcache[S.mun]=await getJSON(`data/mun/${S.mun}.json`));if(my!==busy)return;
     const m=M[S.mun];
-    wardGeo=L.geoJSON(MF.wards,{style:f=>wardStyle(f.properties.no),bubblingMouseEvents:false,onEachFeature:(f,l)=>{const w=m.w.find(x=>x.no===f.properties.no);
+    wardGeo=L.geoJSON(MF.wards,{style:f=>wardStyle(f.properties.no),onEachFeature:(f,l)=>{const w=m.w.find(x=>x.no===f.properties.no);
         l.bindTooltip(`<span class="admtip">Ward ${w.no}</span><br>${nf(w.t)} people`,{sticky:true});
         if(S.ward==null)l.bindTooltip(String(w.no),{permanent:true,direction:'center',className:'wlbl'});
         l.on('mouseover',()=>l.setStyle({weight:1.8,color:'#16202a',opacity:1}));l.on('mouseout',()=>l.setStyle(wardStyle(f.properties.no)));
@@ -172,7 +168,7 @@ async function loadWard(w,m){
     const vis=r()<.7-.45*((cx-W0)/((E0-W0)||1));
     return{id:`B-${w.no}-${String(i+1).padStart(5,'0')}`,cx,cy,pts,bname:q[3]||'',
       v:vis,date:vis?`2026-${r()<.5?'09':'10'}-${String(r()<.5?20+Math.floor(r()*10):1+Math.floor(r()*6)).padStart(2,'0')}`:null,rem:''}});
-  const sv=loadSaved(w.id);b.forEach(x=>{const o=sv[x.id];if(o){x.v=o.v;x.date=o.date;x.rem=o.rem||'';x.by=o.by||'';x.vby=o.vby||'';x.touched=1}});
+  const sv=loadSaved(w.id);b.forEach(x=>{const o=sv[x.id];if(o){x.v=o.v;x.date=o.date;x.rem=o.rem||'';x.by=o.by||'';x.vby=o.vby||'';x.q=o.q||null;x.qby=o.qby||'';x.touched=1}});
   const mx=111320*Math.cos(w.bb[1]*Math.PI/180);
   const pois=decoratePois(MF,S.mun).filter(p=>p.w===w.no).map(p=>({...p}));
   pois.forEach((p,i)=>{p.i=i;p.near=b.filter(o=>Math.hypot((o.cx-p.x)*mx,(o.cy-p.y)*111320)<100).length});
@@ -236,7 +232,29 @@ function selectB(i,go){S.sel=i;S.type='b';if(go)map.setView([W.b[i].cy,W.b[i].cx
 function selectP(i,go){const p=PL()[i];S.sel=i;S.type='p';S.showPoi=true;$('#tp').classList.add('on');if(go)map.setView([p.y,p.x],Math.max(map.getZoom(),17));syncAll();renderCard()}
 function closeCard(){S.sel=null;S.type=null;S.gsel=null;syncAll();renderCard()}
 function setVisited(i,v){const b=W.b[i];mark(b,v);persist();syncAll();renderSide();renderCard();renderLegend();toast(v?`${b.id} marked as visited`:`${b.id} marked as not visited`)}
-function saveRem(i){const b=W.b[i],t=$('#rem').value.trim();if(t!==b.rem){b.rem=t;b.by=t?who().name:'';b.touched=1}persist();renderSide();toast('Note saved')}
+/* Preloaded field questions asked at every building. Answers are counts and choices only, no names. */
+const QN=[['n','People living here'],['m','Men'],['f','Women'],['o','Other gender'],['k','Children under 18'],['a','Adults 18–59'],['s','Seniors 60 and over'],['rv','Registered voters'],['nv','Adults not registered to vote'],['ab','Members living abroad']];
+const QUSE=['Home','Shop or business','Home and shop','Institution','Vacant'];
+const QISS=['Roads','Drinking water','Electricity','Health care','Education','Jobs','Waste and sanitation','Safety','Other'];
+const qHas=q=>q&&Object.keys(q).length>0;
+function saveRem(i){
+  const b=W.b[i],t=$('#rem').value.trim();if(t!==b.rem){b.rem=t;b.by=t?who().name:'';b.touched=1}
+  const q={};QN.forEach(([k])=>{const el=$('#q_'+k);if(el&&el.value!==''){const n=Math.max(0,Math.round(+el.value));if(!isNaN(n))q[k]=n}});
+  [['u','#q_u'],['c','#q_c']].forEach(([k,id])=>{const el=$(id);if(el&&el.value)q[k]=el.value});
+  const fu=$('#q_fu');if(fu&&fu.checked)q.fu=1;
+  if(JSON.stringify(q)!==JSON.stringify(b.q||{})){b.q=q;b.qby=qHas(q)?who().name:'';b.touched=1}
+  let warn='';
+  if(q.n!=null&&((q.m||0)+(q.f||0)+(q.o||0)>q.n||(q.k||0)+(q.a||0)+(q.s||0)>q.n))warn=' Check the counts: groups add up to more than the people living here.';
+  persist();renderSide();toast('Saved.'+warn)}
+function qFields(b){
+  const q=b.q||{},v=k=>q[k]==null?'':q[k];
+  return `<details class="qbox" ${S.qopen===false?'':'open'} ontoggle="S.qopen=this.open"><summary>Field questions</summary>
+   <div class="qgrid">${QN.map(([k,l])=>`<label class="qf" for="q_${k}"><span>${l}</span><input id="q_${k}" type="number" inputmode="numeric" min="0" max="99" value="${v(k)}"></label>`).join('')}</div>
+   <label class="qf" for="q_u"><span>What is this building used for?</span><select id="q_u"><option value="">Not asked</option>${QUSE.map(o=>`<option${q.u===o?' selected':''}>${o}</option>`).join('')}</select></label>
+   <label class="qf" for="q_c"><span>Biggest concern for the household</span><select id="q_c"><option value="">Not asked</option>${QISS.map(o=>`<option${q.c===o?' selected':''}>${o}</option>`).join('')}</select></label>
+   <label class="qchk" for="q_fu"><input id="q_fu" type="checkbox" ${q.fu?'checked':''}> Needs a follow-up visit</label>
+  </details>`;
+}
 function renderCard(){
   const c=$('#card'),ok=S.sel!=null&&((S.type==='b'&&W)||(S.type==='p'&&PL()[S.sel])||(S.type==='g'&&S.gsel));
   if(!ok){c.hidden=true;return}c.hidden=false;
@@ -244,8 +262,9 @@ function renderCard(){
     c.innerHTML=`<div class="row"><div><h3>${b.id}</h3><span class="pill ${b.v?'v':'n'}">${b.v?'Visited':'Not visited'}</span></div><button class="x" aria-label="Close" onclick="closeCard()">×</button></div>
      <dl class="kv"><dt>Ward</dt><dd>${W.w.no} · ${W.m.n}</dd><dt>Last visit</dt><dd>${b.date||'Never'}</dd>${b.rem&&b.by?`<dt>Note by</dt><dd>${esc(b.by)}</dd>`:''}</dl>
      <div class="seg"><button class="nv ${b.v?'':'on'}" onclick="setVisited(${S.sel},false)">Not visited</button><button class="vv ${b.v?'on':''}" onclick="setVisited(${S.sel},true)">Visited</button></div>
+     ${qFields(b)}
      <div><label class="lbl" for="rem">Note (optional)</label><textarea id="rem" placeholder="Anything worth remembering about this building">${b.rem}</textarea></div>
-     <div class="btnrow"><button class="btn sm" onclick="saveRem(${S.sel})">Save note</button><button class="btn ghost sm" onclick="routeAdd(${S.sel})">${S.route.includes(S.sel)?'In route':'Add to route'}</button></div>`;
+     <div class="btnrow"><button class="btn sm" onclick="saveRem(${S.sel})">Save</button><button class="btn ghost sm" onclick="routeAdd(${S.sel})">${S.route.includes(S.sel)?'In route':'Add to route'}</button></div>`;
   }else if(S.type==='g'){const o=S.gsel,k=GG[o.g];
     c.innerHTML=`<div class="row"><div><h3>${esc(o.n)}</h3><span class="pill" style="background:${k[1]};color:#fff">${k[0]}</span></div><button class="x" aria-label="Close" onclick="closeCard()">×</button></div>
      <dl class="kv"><dt>Type</dt><dd>${esc(o.s||o.c||'—')}</dd><dt>Address</dt><dd>${esc(o.a||'—')}</dd></dl><div class="src">Source: Galli Maps places</div>`;
@@ -278,7 +297,7 @@ const sumW=key=>wardsIn().reduce((a,w)=>a+(w[key]||0),0);
 function munsIn(){const c=cur();return c.k==='mun'||c.k==='ward'?[M[S.mun]]:c.k==='dist'?MD[c.e.c]:c.k==='prov'?H.mun.filter(m=>m.p===c.e.c):H.mun}
 
 /* ---------- election atlas: real results from data/elections.json (built by tools/build_elections.py) ---------- */
-let R22=null,PNAME=null,wardGeo=null,EL=null,EM={},ED={},PT={},CI={},admGeo=null;
+let R83=null,R22=null,PNAME=null,wardGeo=null,EL=null,EM={},ED={},PT={},CI={},admGeo=null;
 const SUCC={FSFN:['JSP','LSP'],RJPN:['JSP','LSP'],NSP:['JSP','LSP'],UML:['US']}; // splits and mergers: a win by the successor is not a flip
 const isSucc=(a,b)=>(SUCC[a]||[]).includes(b);
 const pcol=k=>(PT[k]||PT.OTH||[0,0,'#8a8f98'])[2], psh=(k,raw)=>k==='OTH'&&raw?raw:(PT[k]||PT.OTH||['Other'])[0];
@@ -293,6 +312,7 @@ function mix(a,b,t){const p=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16)),x=p(a
 const NEUTRAL='#cfd5db';
 
 /* map layers */
+const vt=r=>r.v83?r.v83[3]:(r.v22&&r.v22[0])||0;
 const LAYERS=[['off','Outlines only'],['win22','2022 winner'],['win17','2017 winner'],['swing','Held or flipped'],['margin','Close races'],['s26','2026 House'],['reg','Voters per 100 adults']];
 const LNOTE={off:'Boundaries only.',
   win22:'Party of the 2022 mayor / chair. Districts and provinces show the party that won the most local governments.',
@@ -300,7 +320,7 @@ const LNOTE={off:'Boundaries only.',
   swing:'Did the 2022 mayor / chair come from the same party as in 2017? Successor parties after splits and mergers do not count as flips. Districts and provinces show the share that flipped.',
   margin:'Lead of the 2022 winner over the runner-up, as a share of their two votes. Districts and provinces show the share of local governments decided by under 5%.',
   s26:'2026 House of Representatives proportional vote leader. Constituencies do not follow local-level boundaries, so the colour is the whole district.',
-  reg:'2022 registered voters per 100 resident adults (Census 2021). Under 100 can mean voters registered elsewhere; over 100 often means voters living abroad.'};
+  reg:'Registered voters per 100 resident adults (Census 2021). Uses the final 2083 roll published in October 2026, or the 2022 roll where the new roll is not loaded. Under 100 can mean voters registered elsewhere; over 100 often means voters living abroad.'};
 const RAMP=['#F6E7DC','#EDBE9E','#DF8B5E','#C4501F','#7A2916'];
 const BINS={
   margin:{b:[.02,.05,.1,.2,9],l:['Under 2%','2–5%','5–10%','10–20%','20% or more'],c:['#7A2916','#C4501F','#DF8B5E','#EDBE9E','#F6E7DC']},
@@ -317,7 +337,7 @@ function lvM(L,r){
     if(isSucc(a[1],b[1]))return{k:'succ',c:mix(NEUTRAL,pcol(b[1]),.45),l:'Passed to successor party',t:`${psh(a[1],a[2])} → ${psh(b[1],b[2])} (successor party)`};
     return{k:b[1],c:pcol(b[1]),l:'Flipped to '+psh(b[1],b[2]),t:`${psh(a[1],a[2])} → ${psh(b[1],b[2])}`}}
   if(L==='margin'){const m=marg(r.h22||[]);if(!m)return null;const b=bin(BINS.margin,m.pct);return{...b,t:`${psh(m.w[1],m.w[2])} won by ${nf(m.votes)} votes (${pct0(m.pct)} of the top two)`}}
-  if(L==='reg'){const a=Cn(r,'a18');if(!(r.v22&&r.v22[0]&&a))return null;const v=r.v22[0]/a,b=bin(BINS.reg,v);return{...b,t:`${Math.round(v*100)} registered voters per 100 resident adults`}}
+  if(L==='reg'){const a=Cn(r,'a18'),vr=vt(r);if(!(vr&&a))return null;const v=vr/a,b=bin(BINS.reg,v);return{...b,t:`${Math.round(v*100)} registered voters per 100 resident adults${r.v83?' (2083 roll)':' (2022 roll)'}`}}
   return null;
 }
 function lv26(d,p){
@@ -331,7 +351,7 @@ function lvA(L,rs){
     const n=e.reduce((a,b)=>a+b[1],0);return{k:e[0][0],c:pcol(e[0][0]),l:psh(e[0][0]),t:`${psh(e[0][0])} won ${e[0][1]} of ${n} local governments`}}
   if(L==='swing'){const s=swingStats(rs);if(!s.both)return null;const b=bin(BINS.aswing,s.fl/s.both);return{...b,t:`${s.fl} of ${s.both} changed party`}}
   if(L==='margin'){let n=0,k=0;rs.forEach(r=>{const m=marg(r.h22||[]);if(m){n++;if(m.pct<.05)k++}});if(!n)return null;const b=bin(BINS.amargin,k/n);return{...b,t:`${k} of ${n} races decided by under 5%`}}
-  if(L==='reg'){let v=0,a=0;rs.forEach(r=>{const x=Cn(r,'a18');if(r.v22&&r.v22[0]&&x){v+=r.v22[0];a+=x}});if(!a)return null;const b=bin(BINS.reg,v/a);return{...b,t:`${Math.round(v/a*100)} registered voters per 100 resident adults`}}
+  if(L==='reg'){let v=0,a=0;rs.forEach(r=>{const x=Cn(r,'a18'),y=vt(r);if(y&&x){v+=y;a+=x}});if(!a)return null;const b=bin(BINS.reg,v/a);return{...b,t:`${Math.round(v/a*100)} registered voters per 100 resident adults${rs.every(r=>r.v83)?' (2083 roll)':''}`}}
   return null;
 }
 const recsOf=pr=>pr.k==='m'?[EM[pr.id]]:(pr.k==='d'?(MD[pr.c]||[]):H.mun.filter(m=>m.p===pr.c)).map(m=>EM[m.id]).filter(Boolean);
@@ -402,7 +422,7 @@ const realTag='<div class="src"><span class="tag real">Real</span> Election Comm
 const LS={get(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
 const who=()=>S.who||(S.who=LS.get('gm_who',{name:'Sample Candidate',role:'Candidate'}));
 const loadSaved=id=>LS.get('gm_visits_'+id,{});
-function persist(){if(!W)return;const o={};W.b.forEach(b=>{if(b.touched)o[b.id]={v:b.v,date:b.date,rem:b.rem,by:b.by,vby:b.vby}});LS.set('gm_visits_'+W.w.id,o)}
+function persist(){if(!W)return;const o={};W.b.forEach(b=>{if(b.touched)o[b.id]={v:b.v,date:b.date,rem:b.rem,by:b.by,vby:b.vby,q:b.q||null,qby:b.qby||''}});LS.set('gm_visits_'+W.w.id,o)}
 function mark(b,v){b.v=v;b.date=v?TODAY:null;b.touched=1;b.vby=v?who().name:''}
 
 /* ---------- map buttons: buildings on/off, freehand select ---------- */
@@ -463,10 +483,10 @@ function renderSelbar(){
   }else{
     let v=0;S.pick.forEach(i=>{if(W.b[i].v)v++});
     el.innerHTML=`<span><b class="num">${nf(n)}</b> selected <small>(${nf(v)} visited)</small></span>
-      <button class="btn sm" id="sbV">Mark visited</button><button class="btn ghost sm" id="sbN">Not visited</button><button class="btn ghost sm" id="sbR">Plan route</button><button class="btn ghost sm" id="sbE">Export</button><button class="btn ghost sm" id="sbC">Clear</button>${done}`;
+      <button class="btn sm" id="sbV">Mark visited</button><button class="btn ghost sm" id="sbN">Not visited</button><button class="btn ghost sm" id="sbR">Plan route</button><button class="btn ghost sm" id="sbC">Clear</button>${done}`;
   }
   const on=(id,f)=>{const b=$(id);if(b)b.onclick=f};
-  on('#sbV',()=>bulk(true));on('#sbN',()=>bulk(false));on('#sbR',()=>routeFromPick());on('#sbE',()=>openReport('sel'));
+  on('#sbV',()=>bulk(true));on('#sbN',()=>bulk(false));on('#sbR',()=>routeFromPick());
   on('#sbC',()=>{S.pick.clear();S.undo=null;syncAll();renderSelbar()});on('#sbDone',()=>{S.undo=null;lassoMode(false)});on('#sbUndo',undoBulk);
 }
 function bulk(v){
@@ -709,39 +729,17 @@ function gpTile(x,y){
   return GPC[k]=(async()=>{try{const r=await fetch(POI_URL.replace('{z}',14).replace('{x}',x).replace('{y}',y));if(!r.ok)return[];const buf=await r.arrayBuffer();return buf.byteLength?mvtPois(buf,14,x,y):[]}catch(e){delete GPC[k];return[]}})();
 }
 const tileXY=(lng,lat)=>[Math.floor((lng+180)/360*16384),Math.floor((1-Math.asinh(Math.tan(lat*Math.PI/180))/Math.PI)/2*16384)];
-function selGeom(){
-  const f=(k,c)=>(BND.features.find(x=>x.properties.k===k&&x.properties.c===c)||{}).geometry;
-  if(S.ward!=null)return MF&&(MF.wards.find(x=>x.properties.no===S.ward)||{}).geometry;
-  if(S.mun!=null)return MF&&MF.outline;
-  if(S.dist!=null)return f('d',S.dist);
-  if(S.prov!=null)return f('p',S.prov);
-  return null;
-}
-let GAkey='';
-/* places inside the selected boundary (ward, municipality, district); with no boundary, the map view */
+/* places in the current view; finer ranks only appear as you zoom in, like the Galli Maps style */
 async function updateGP(){
   const my=++gpBusy;
-  const off=sc=>{poiL.clearLayers();GV=[];GA=[];GAkey='';S.gscope=sc;renderPoiPanel()};
-  if(!S.showPoi){off('view');return}
-  const g=selGeom(),bd=map.getBounds(),z=map.getZoom(),n=a=>(a[2]-a[0]+1)*(a[3]-a[1]+1);
-  let a=null,area=false;
-  if(g&&ext){a=[...tileXY(ext[0],ext[3]),...tileXY(ext[2],ext[1])];area=n(a)<=25}
-  if(!area){
-    if(z<14){off('view');return}
-    a=[...tileXY(bd.getWest(),bd.getNorth()),...tileXY(bd.getEast(),bd.getSouth())];
-    if(n(a)>9){off('view');return}
-  }
-  S.gscope=area?'area':'view';
-  const key=[S.prov,S.dist,S.mun,S.ward,area?'a':a.join()].join('|');
-  if(key!==GAkey){
-    const ts=[];for(let x=a[0];x<=a[2];x++)for(let y=a[1];y<=a[3];y++)ts.push(gpTile(x,y));
-    const seen=new Set();
-    let all=(await Promise.all(ts)).flat().filter(o=>{if(!o.n)return false;const k=o.n+o.x.toFixed(5)+o.y.toFixed(5);if(seen.has(k))return false;seen.add(k);return true});
-    if(my!==gpBusy)return;
-    if(g){const b=ext||[-180,-90,180,90];all=all.filter(o=>o.x>=b[0]&&o.x<=b[2]&&o.y>=b[1]&&o.y<=b[3]&&inGeom(o.x,o.y,g))}
-    GA=all;GAkey=key;
-  }
-  GV=area?GA:GA.filter(o=>o.r<=z+1&&o.x>=bd.getWest()&&o.x<=bd.getEast()&&o.y>=bd.getSouth()&&o.y<=bd.getNorth());
+  if(!S.showPoi||map.getZoom()<14){poiL.clearLayers();GV=[];GA=[];renderPoiPanel();return}
+  const bd=map.getBounds(),[x0,y0]=tileXY(bd.getWest(),bd.getNorth()),[x1,y1]=tileXY(bd.getEast(),bd.getSouth());
+  if((x1-x0+1)*(y1-y0+1)>9){poiL.clearLayers();GV=[];GA=[];renderPoiPanel();return}
+  const ts=[];for(let x=x0;x<=x1;x++)for(let y=y0;y<=y1;y++)ts.push(gpTile(x,y));
+  const seen=new Set(),all=(await Promise.all(ts)).flat().filter(o=>{const k=o.n+o.x.toFixed(5)+o.y.toFixed(5);if(seen.has(k))return false;seen.add(k);return true});if(my!==gpBusy)return;
+  const z=map.getZoom();
+  GA=all.filter(o=>o.n&&o.x>=bd.getWest()&&o.x<=bd.getEast()&&o.y>=bd.getSouth()&&o.y<=bd.getNorth());
+  GV=GA.filter(o=>o.r<=z+1);
   drawGP();renderPoiPanel();
 }
 const gpCanvas=()=>S.gcv||(S.gcv=L.canvas({padding:.3,tolerance:6}));
@@ -851,6 +849,14 @@ function llHTML(r,c){
   return `${where}${postBlock(r,ey,0)}${postBlock(r,ey,1)}${ex}${warn}${ey==='22'?'<div class="src">The 2022 source lists the top two candidates for each post.</div>':''}`;
 }
 const FLAGS={voters_fixed_to_m_plus_f:'Voter total did not match male + female; male + female used.',voters_duplicated_across_pages:'Source repeats another local level’s voter figures, so voters are blank.',head_elected_not_top_votes:'Mayor/chair winner is not the top vote-getter in the source; vote figures may be mis-entered.',deputy_elected_not_top_votes:'Deputy winner is not the top vote-getter in the source; vote figures may be mis-entered.',head_votes_missing:'Mayor/chair vote counts are missing in the source.',deputy_votes_missing:'Deputy vote counts are missing in the source.',head_tied_votes_suspect:'Mayor/chair candidates show identical votes in the source.',deputy_tied_votes_suspect:'Deputy candidates show identical votes in the source.',head_deputy_scale_mismatch:'Mayor/chair and deputy vote totals differ a lot in the source.',votes_exceed_voters:'Votes exceed registered voters in the source, so voters are blank.'};
+function hor26HTML(){
+  const H6=HOR26,tf=H6.fptp.cast/H6.roll*100,tp=H6.pr.cast/H6.roll*100,mx=H6.seats[0][1];
+  return `<div class="lbl" style="margin:0">2026 House of Representatives, official totals <span class="tag real">Real</span></div>
+   <div class="mini"><div><small>Turnout (direct)</small><b class="num">${tf.toFixed(1)}%</b></div><div><small>Turnout (proportional)</small><b class="num">${tp.toFixed(1)}%</b></div><div><small>Valid votes, direct</small><b class="num">${nf(H6.fptp.valid)}</b></div><div><small>Registered voters</small><b class="num">${nf(H6.roll)}</b></div></div>
+   <div class="lbl" style="margin:0">Proportional seats won</div>
+   <div>${H6.seats.map(([n,v,c])=>`<div class="res"><div class="nm">${n}</div><div class="vt num">${v}</div><div class="meta"><div class="bar"><i style="width:${v/mx*100}%;background:${c}"></i></div></div></div>`).join('')}</div>
+   <div class="src">Election Commission press release of 2082/11/28 (March 2026). Six parties passed the 3% threshold; 110 proportional seats.</div>`;
+}
 function d26HTML(x,where){
   const seats=Object.values(x.seats).reduce((a,b)=>a+b,0);
   return `<div class="src"><b style="color:var(--ink)">House of Representatives, March 2026</b> · ${where||''}</div>
@@ -868,7 +874,7 @@ function mayorList(ey){
 function aggHTML(c){
   const ey=S.ey,rs=scopeRecs(),where=levelName(),n=rs.length;
   if(ey==='26'){
-    if(c.k==='nat'){const x={pr:EL.nat26.pr,seats:EL.nat26.seats,cons:[]};return d26HTML(x,'all of Nepal')+'<div class="src">Choose a province or district for constituency detail.</div>'}
+    if(c.k==='nat'){const x={pr:EL.nat26.pr,seats:EL.nat26.seats,cons:[]};return hor26HTML()+d26HTML(x,'all of Nepal')+'<div class="src">Choose a province or district for constituency detail.</div>'}
     return d26HTML(scopeD26(),where);
   }
   const key='h'+ey,cnt=seatCount(rs,key),tot=Object.values(cnt).reduce((a,b)=>a+b,0);
@@ -881,12 +887,63 @@ function aggHTML(c){
 /* ---------- voters: registered voters, then voting-age people by gender and age group ---------- */
 const AGE=[['18–29',[[3,.4],[4,1],[5,1]]],['30–39',[[6,1],[7,1]]],['40–49',[[8,1],[9,1]]],['50–59',[[10,1],[11,1]]],['60+',[12,13,14,15,16,17,18,19].map(i=>[i,1])]];
 const ageSum=(a,d)=>d.reduce((s,[i,f])=>s+a[i]*f,0);
+/* Election Commission final voter roll (2083 BS, as of 15 Bhadra 2083), published 30 Ashwin 2083 (16-17 Oct 2026):
+   province, district and local-level counts from data/roll83.json (tools/build_roll83.py reads the commission's PDF). */
+const ROLL83={total:19091375,m:9769825,f:9321336,o:214,prev:{total:18903689,m:9663358,f:9240131,o:200},prelim:19294961,added:430352,removed:203586,deaths:45322};
+function rollHTML(){
+  if(!R83)return '';
+  const c=cur();let v,nm;
+  if(c.k==='nat'){const n=R83.nat;v=[n.m,n.f,n.o,n.t,n.p];nm='Nepal'}
+  else if(c.k==='prov'){v=R83.prov[c.e.c];nm=c.e.n+' Province'}
+  else if(c.k==='dist'){v=R83.dist[c.e.c];nm=c.e.n+' District'}
+  else{v=R83.mun[S.mun];nm=mname(M[S.mun])}
+  if(!v)return '';
+  const [m,f,o,t,pl]=v,pm=m/t,pf=f/t,rs=c.k==='ward'?[EM[S.mun]].filter(Boolean):scopeRecs();
+  let a=0,b=0;rs.forEach(r=>{if(r.v83&&r.v22&&r.v22[0]){a+=r.v83[3];b+=r.v22[0]}});
+  const dl=b?(a/b-1)*100:null;
+  let extra='';
+  if(c.k==='nat'){const R=ROLL83,d=R.total-R.prev.total;
+    extra=`<div class="mini"><div><small>Since the March 2026 House roll</small><b class="num">+${nf(d)}</b></div><div><small>Added, then removed</small><b class="num">${nf(R.added)} · ${nf(R.removed)}</b></div></div>
+     <div class="src">The preliminary roll (17 Sep) held ${nf(R.prelim)} names; ${nf(R.removed)} were removed after claims and objections, ${nf(R.deaths)} of them deaths.</div>`}
+  return `<div class="lbl" style="margin:0">Registered voters, final roll 2083 <span class="tag real">Real</span></div>
+   <div><div class="big num">${nf(t)}</div><div class="src">${esc(nm)}${c.k==='ward'?' (whole local level; ward counts are not published)':''} · Election Commission, published October 2026</div>
+   <div class="stack" style="margin-top:8px"><i style="width:${pm*100}%;background:var(--male)"></i><i style="width:${pf*100}%;background:var(--female)"></i></div>
+   <div class="legendrow" style="margin-top:6px"><span><i class="sw" style="background:var(--male)"></i>Male ${nf(m)} (${pct0(pm)})</span><span><i class="sw" style="background:var(--female)"></i>Female ${nf(f)} (${pct0(pf)})</span><span>Other ${nf(o)}</span></div></div>
+   <div class="mini"><div><small>Polling places</small><b class="num">${nf(pl)}</b></div><div><small>Voters per polling place</small><b class="num">${nf(t/(pl||1))}</b></div>${dl!=null?`<div><small>Change since 2022 roll</small><b class="num">${dl>=0?'+':''}${dl.toFixed(1)}%</b></div>`:''}</div>${extra}`;
+}
+
+/* National turnout history. Sources: Ratopati (1991-2017), Onlinekhabar (2022 House), Election Commission press release 2082/11/28 (2026 House, votes cast
+   divided by the 18,903,689 registered voters), and this dashboard's own 2022 local figure (valid ward-chair votes). */
+const HOR26={roll:18903689,fptp:{cast:11168032,valid:10559017},pr:{cast:11280617,valid:10835025},seats:[['Rastriya Swatantra Party',57,'#2f7fd0'],['Nepali Congress',20,'#1f8a4c'],['CPN (UML)',16,'#d6453d'],['Nepali Communist Party',9,'#8c2f39'],['Shram Sanskriti Party',4,'#7b4fbf'],['Rastriya Prajatantra Party',4,'#d9a21b']]};
+const TURN_HIST=[['1991 House',65.15],['1994 House',61.86],['1999 House',65.79],['2008 Constituent Assembly',61.69],['2013 Constituent Assembly',74.46],['2017 House',68.59],['2022 House',61.37],['2026 House',HOR26.fptp.cast/HOR26.roll*100]];
+function turnHistHTML(){
+  const mx=80;
+  return `<div class="lbl" style="margin:0">Turnout in past national elections <span class="tag real">Real</span></div>
+   <div style="display:flex;flex-direction:column;gap:6px">${TURN_HIST.map(([l,v])=>`<div class="hb"><span>${l}</span><div class="bar"><i style="width:${v/mx*100}%"></i></div><span class="num">${v.toFixed(1)}%</span></div>`).join('')}</div>
+   <div class="src">Direct (first-past-the-post) votes cast as a share of registered voters. 2026: ${nf(HOR26.fptp.cast)} votes cast, ${nf(HOR26.fptp.valid)} valid (94.55%); proportional ${nf(HOR26.pr.cast)} cast (${(HOR26.pr.cast/HOR26.roll*100).toFixed(1)}%). Other reports quote 58.07% for 2026; the commission's own counts give ${(HOR26.fptp.cast/HOR26.roll*100).toFixed(2)}%.</div>`;
+}
+
+/* 2022 local election turnout, worked out from data/results22.json: valid ward-chair votes (every candidate) divided by the
+   eligible voters published for the local level. Invalid ballots are not in the source, so the true turnout is slightly higher.
+   Local levels whose totals do not add up (under 30% or over 100%) are left out and counted. Not available per ward. */
+function turn22HTML(){
+  const c=cur();if(!R22||c.k==='ward')return '';
+  let el=0,ca=0,n=0,out=0;
+  munsIn().forEach(m=>{const r=R22[m.id];if(!r||!r.v||!r.v[0])return;
+    const cast=Object.values(r.w).reduce((a,w)=>a+(w.p||[]).reduce((b,x)=>b+(x[2]||0),0),0),t=cast/r.v[0];
+    if(!cast||t<.3||t>1){out++;return}el+=r.v[0];ca+=cast;n++});
+  if(!el)return '';
+  const t=ca/el*100;
+  return `<div class="lbl" style="margin:0">Turnout, 2022 local election <span class="tag real">Real</span></div>
+   <div><div class="big num">${t.toFixed(1)}%</div><div class="bar" style="margin-top:8px"><i style="width:${t}%"></i></div>
+   <div class="src" style="margin-top:6px">${nf(ca)} valid ward-chair votes of ${nf(el)} eligible voters, ${nf(n)} local level${n===1?'':'s'}${out?`; ${out} left out because the source totals do not add up`:''}. Invalid ballots are not counted, so actual turnout is a little higher.</div></div>`;
+}
 function votersHTML(){
   const c=cur(),e=c.e,rs=c.k==='ward'||!EL?[]:scopeRecs();
   const rows=AGE.map(([l,d])=>({l,m:ageSum(e.am,d),f:ageSum(e.af,d)})),tm=rows.reduce((a,r)=>a+r.m,0),tf=rows.reduce((a,r)=>a+r.f,0),adults=tm+tf,mx=Math.max(...rows.map(r=>Math.max(r.m,r.f)),1);
   let v=0,vm=0,vf=0;rs.forEach(r=>{if(r.v22&&r.v22[0]){v+=r.v22[0];vm+=r.v22[1]||0;vf+=r.v22[2]||0}});
   const reg=c.k==='ward'?`<div class="src">Registered voters are published per local level, not per ward. Showing residents of voting age below.</div>`
-    :`<div class="lbl" style="margin:0">Registered voters, 2022</div><div><div class="big num">${v?nf(v):'–'}</div>${vm&&vf?`<div class="stack" style="margin-top:8px"><i style="width:${vm/(vm+vf)*100}%;background:var(--male)"></i><i style="width:${vf/(vm+vf)*100}%;background:var(--female)"></i></div><div class="legendrow" style="margin-top:6px"><span><i class="sw" style="background:var(--male)"></i>Male ${nf(vm)} (${pct0(vm/(vm+vf))})</span><span><i class="sw" style="background:var(--female)"></i>Female ${nf(vf)} (${pct0(vf/(vm+vf))})</span></div>`:''}</div>`;
+    :`<div class="lbl" style="margin:0">Registered voters, 2022 roll</div><div><div class="big num">${v?nf(v):'–'}</div>${vm&&vf?`<div class="stack" style="margin-top:8px"><i style="width:${vm/(vm+vf)*100}%;background:var(--male)"></i><i style="width:${vf/(vm+vf)*100}%;background:var(--female)"></i></div><div class="legendrow" style="margin-top:6px"><span><i class="sw" style="background:var(--male)"></i>Male ${nf(vm)} (${pct0(vm/(vm+vf))})</span><span><i class="sw" style="background:var(--female)"></i>Female ${nf(vf)} (${pct0(vf/(vm+vf))})</span></div>`:''}</div>`;
   const real=rs.length&&sumC(rs,'a18')>0;
   const age=`<div class="lbl" style="margin:0">People of voting age (18+)</div>
    <div class="mini"><div><small>Adults 18+${real?'':' (est.)'}</small><b class="num">${nf(real?sumC(rs,'a18'):adults)}</b></div><div><small>Women · men</small><b class="num">${pct0(tf/adults)} · ${pct0(tm/adults)}</b></div></div>
@@ -898,8 +955,8 @@ function votersHTML(){
     const lit=sumC(rs,'lit')/(sumC(rs,'lit_den')||1);
     more=`<div class="mini"><div><small>People abroad</small><b class="num">${nf(abs)}</b></div><div><small>New voters by 2027</small><b class="num">${nf(n27)}</b></div><div><small>Households</small><b class="num">${nf(hh)}</b></div><div><small>Smartphone homes</small><b class="num">${pct0(sumC(rs,'smart')/(am||1))}</b></div><div><small>Internet homes</small><b class="num">${pct0(sumC(rs,'net')/(am||1))}</b></div><div><small>Can read and write</small><b class="num">${pct0(lit)}</b></div></div>`;
   }else more=`<div class="mini"><div><small>Population</small><b class="num">${nf(e.t)}</b></div><div><small>Males per 100 females</small><b class="num">${Math.round(e.m/e.f*100)}</b></div></div>`;
-  return `${reg}${age}<details class="more" ${S.more?'open':''} ontoggle="S.more=this.open"><summary>More census detail</summary>${more}</details>
-   <div class="src">${c.k==='ward'||!real?'Age groups are estimated from Census 2021 five-year bands (18–19 is 2/5 of the 15–19 band).':'Census 2021 resident adults; age groups are from its five-year bands.'} Voter rolls are from 2022.</div>`;
+  return `${rollHTML()}${reg}${turn22HTML()}${c.k==='nat'?turnHistHTML():''}${age}<details class="more" ${S.more?'open':''} ontoggle="S.more=this.open"><summary>More census detail</summary>${more}</details>
+   <div class="src">${c.k==='ward'||!real?'Age groups are estimated from Census 2021 five-year bands (18–19 is 2/5 of the 15–19 band).':'Census 2021 resident adults; age groups are from its five-year bands.'} Voter rolls: 2083 (October 2026) and 2022.</div>`;
 }
 
 /* ---------- visits tab ---------- */
@@ -907,14 +964,19 @@ function visitsHTML(){
   const c=cur();
   if(!(W&&W.b.length)){
     return `<div class="stats" style="width:100%"><div class="stat"><small>Buildings mapped</small><b class="num">${nf(sumW('nb'))}</b></div><div class="stat"><small>Wards</small><b class="num">${nf(wardsIn().length)}</b></div></div>
-      <div class="hint2">${c.k==='ward'?'No building footprints for this ward.':'Click a ward on the map to track household visits, select houses and plan a route.'}</div>
-      ${S.mun!=null||S.dist!=null?'<div class="btnrow"><button class="btn ghost sm" id="exp">Export field notes</button></div>':''}`;
+      <div class="hint2">${c.k==='ward'?'No building footprints for this ward.':'Pick a ward to track household visits, select houses and plan a route.'}</div>`;
   }
   const st=stats(),circ=2*Math.PI*34;
   return `<div class="prog-top"><div class="ring"><svg viewBox="0 0 84 84" width="84" height="84"><circle class="t" cx="42" cy="42" r="34"/><circle class="f" cx="42" cy="42" r="34" stroke-dasharray="${circ}" stroke-dashoffset="${circ*(1-st.c/100)}"/></svg><b class="num">${st.c.toFixed(0)}%</b></div>
      <div class="stats"><div class="stat"><small>Houses</small><b class="num">${nf(st.t)}</b></div><div class="stat"><small>Visited</small><b class="num" style="color:var(--visited)">${nf(st.v)}</b></div><div class="stat"><small>Remaining</small><b class="num">${nf(st.r)}</b></div></div></div>
    <div class="btnrow"><button class="btn sm ${S.lasso?'':'ghost'}" id="vSel" ${S.showB?'':'disabled title="Show buildings first"'}>${S.lasso?'Stop selecting':'Select houses'}</button><button class="btn ghost sm" id="exp">Export field notes</button></div>
+   ${surveyHTML()}
    ${routeHTML()}`;
+}
+function surveyHTML(){
+  const {t,top}=surveyTotals(W.b);if(!t.h)return `<div class="hint2">Open a building and answer the field questions: people, gender, age groups, voters and concerns. Totals appear here.</div>`;
+  const pc=(x)=>t.n?Math.round(x/t.n*100)+'%':'–';
+  return `<div class="lbl" style="margin:0">Field answers so far</div><div class="mini"><div><small>Households answered</small><b class="num">${nf(t.h)}</b></div><div><small>People counted</small><b class="num">${nf(t.n)}</b></div><div><small>Men · women</small><b class="num">${pc(t.m)} · ${pc(t.f)}</b></div><div><small>Under 18 · 60+</small><b class="num">${pc(t.k)} · ${pc(t.s)}</b></div><div><small>Registered voters</small><b class="num">${nf(t.rv)}</b></div><div><small>Follow-ups</small><b class="num">${nf(t.fu)}</b></div></div>${top.length?`<div class="src">Top concern: ${esc(top[0][0])} (${top[0][1]} households)</div>`:''}`;
 }
 
 /* ---------- sidebar ---------- */
@@ -933,21 +995,20 @@ function pListHTML(){
 }
 function placesHTML(){
   if(!S.showPoi)return `<div class="hint2">See schools, health facilities, places of worship, offices and shops from Galli Maps around the area you are looking at.</div><div class="btnrow"><button class="btn sm" id="pOn">Show places on the map</button></div>`;
-  if(S.gscope!=='area'&&map.getZoom()<14)return `<div class="hint2">Zoom in to street level to load places.</div><div class="btnrow"><button class="btn sm" id="pZoom">Zoom in</button></div>`;
-  if(!GA.length)return `<div class="src">${GAkey?'No places found here.':'Loading places…'}</div>`;
+  if(map.getZoom()<14)return `<div class="hint2">Zoom in to street level to load places.</div><div class="btnrow"><button class="btn sm" id="pZoom">Zoom in</button></div>`;
+  if(!GA.length)return '<div class="src">Loading places…</div>';
   const cnt={},types={};GA.forEach(o=>{cnt[o.g]=(cnt[o.g]||0)+1});
   GA.filter(o=>S.gcats.has(o.g)).forEach(o=>{const t=o.s||o.c;if(t)types[t]=(types[t]||0)+1});
   const gk=Object.keys(GG).filter(k=>cnt[k]).sort((a,z)=>cnt[z]-cnt[a]),mx=Math.max(...gk.map(k=>cnt[k]),1);
   const tk=Object.entries(types).sort((a,z)=>z[1]-a[1]).slice(0,14);
-  return `<div class="mini"><div><small>${S.gscope==='area'?'Places in area':'Places in view'}</small><b class="num">${nf(GA.length)}</b></div><div><small>Selected types</small><b class="num">${nf(GA.filter(o=>S.gcats.has(o.g)).length)}</b></div></div>
-   ${S.gscope==='area'?`<div class="src">Only places inside the ${esc(levelName())} boundary.</div>`:''}
+  return `<div class="mini"><div><small>Places in view</small><b class="num">${nf(GA.length)}</b></div><div><small>Selected types</small><b class="num">${nf(GA.filter(o=>S.gcats.has(o.g)).length)}</b></div></div>
    <div><div class="lbl">By group · tap to show or hide</div>${gk.map(k=>`<button class="gbar ${S.gcats.has(k)?'':'off'}" data-cat="${k}"><span class="gn"><i style="background:${GG[k][1]}"></i>${GG[k][0]}</span><span class="bar"><i style="width:${cnt[k]/mx*100}%;background:${GG[k][1]}"></i></span><span class="num">${nf(cnt[k])}<small>${pct0(cnt[k]/GA.length)}</small></span></button>`).join('')}</div>
    ${tk.length?`<div><div class="lbl">Types${S.gtype?` · <button class="linkbtn" id="gtClear">clear “${esc(S.gtype)}”</button>`:''}</div><div class="chips">${tk.map(([t,n])=>`<button class="chip ${S.gtype===t?'on':''}" data-gt="${esc(t)}">${esc(t.replace(/_/g,' '))} <span class="num">${nf(n)}</span></button>`).join('')}</div></div>`:''}
    <div><div class="lbl">List · nearest first · tap to see on the map</div><input class="field" id="pq" type="search" placeholder="Filter by name or address" value="${esc(S.gq||'')}" autocomplete="off"><div id="plist">${pListHTML()}</div></div>
    <div class="btnrow"><button class="btn ghost sm" id="pCsv">Download list</button></div>`;
 }
 function placesCSV(){
-  const rows=[[S.gscope==='area'?'Places in the selected area':'Places in the map view'],[],...contribRows(),['Area',levelName()],['Name','Group','Type','Address','Latitude','Longitude']];
+  const rows=[['Places in the map view'],[],...contribRows(),['Area',levelName()],['Name','Group','Type','Address','Latitude','Longitude']];
   pFiltered().sort((a,z)=>gDist(a)-gDist(z)).forEach(o=>rows.push([o.n,GG[o.g][0],o.s||o.c,o.a,o.y.toFixed(6),o.x.toFixed(6)]));
   download('places.csv',toCSV(rows),'text/csv');
 }
@@ -974,7 +1035,7 @@ function renderSide(){
   side.querySelectorAll('[data-bt]').forEach(b=>b.onclick=()=>{const m=M[+b.dataset.bt];setSel(m.p,m.d,m.id)});
   side.querySelectorAll('[data-rs]').forEach(b=>b.onclick=()=>routeStop(+b.dataset.rs,b.dataset.act));
   const on=(id,f)=>{const b=$(id);if(b)b.onclick=f};
-  on('#exp',()=>openReport());on('#vSel',()=>lassoMode(!S.lasso));on('#rNear',()=>routeNearest(+$('#rN').value));
+  on('#exp',openReport);on('#vSel',()=>lassoMode(!S.lasso));on('#rNear',()=>routeNearest(+$('#rN').value));
   on('#rRev',routeReverse);on('#rClr',routeClear);on('#rCsv',routeCSV);on('#rMap',routeMaps);
   grabInit();renderLegend();if(S.tab==='places')placesBind();const tl=$('#tl');if(tl)tl.classList.toggle('on',S.tab==='places');
 }
@@ -994,97 +1055,45 @@ const mobile=()=>matchMedia('(max-width:768px)').matches;
 const contribRows=()=>{const w=who();return [['Contributed by'],['Name',w.name||''],['Role / organisation',w.role||''],['Exported on',new Date().toLocaleString('en-GB')],[]]};
 function toCSV(rows){return '﻿'+rows.map(r=>r.map(x=>{x=String(x==null?'':x);return /[",\n]/.test(x)?'"'+x.replace(/"/g,'""')+'"':x}).join(',')).join('\r\n')}
 function download(name,text,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type:type+';charset=utf-8'}));a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},500)}
-const wide=a=>a==='mun'||a==='dist';
-const RCOLS=wd=>['Building ID','Ward',...(wd?['Municipality']:[]),'Status','Visit date','Note','Contributed by'];
-const repRow=(b,w,m)=>({id:b.id,ward:w.no,mun:mname(m),v:!!b.v,date:b.date||'',rem:b.rem||'',by:b.by||'',vby:b.vby||''});
-/* wider areas list the houses with a saved visit or note, read from this browser's saved records */
-function savedRows(a){
-  const out=[],ws=a==='dist'?(MD[S.dist]||[]).flatMap(m=>m.w.map(w=>({w,m}))):M[S.mun].w.map(w=>({w,m:M[S.mun]}));
-  ws.forEach(({w,m})=>{const sv=LS.get('gm_visits_'+w.id,{});for(const id in sv){const o=sv[id];out.push({id,ward:w.no,mun:mname(m),v:!!o.v,date:o.date||'',rem:o.rem||'',by:o.by||'',vby:o.vby||''})}});
-  return out;
+const RCOLS=['Building ID','Ward','Status','Visit date','Note','Contributed by',...QN.map(x=>x[1]),'Building use','Biggest concern','Follow-up needed'];
+const rrow=b=>{const q=b.q||{};return [b.id,W.w.no,b.v?'Visited':'Not visited',b.date||'',b.rem||'',(b.rem||b.v||qHas(q))?(b.rem?b.by:b.vby||b.qby)||who().name:'',...QN.map(([k])=>q[k]==null?'':q[k]),q.u||'',q.c||'',q.fu?'Yes':''];};
+function surveyTotals(rows){
+  const t={h:0,n:0,m:0,f:0,o:0,k:0,a:0,s:0,rv:0,nv:0,ab:0,fu:0},c={};
+  rows.forEach(b=>{const q=b.q;if(!qHas(q))return;t.h++;['n','m','f','o','k','a','s','rv','nv','ab'].forEach(k=>t[k]+=q[k]||0);if(q.fu)t.fu++;if(q.c)c[q.c]=(c[q.c]||0)+1});
+  return {t,top:Object.entries(c).sort((a,b)=>b[1]-a[1])};
 }
-const areaLabel=a=>a==='sel'?`${levelName()} · selected houses`:a==='ward'?levelName():a==='mun'?mname(M[S.mun]):D[S.dist].n+' District';
-function areaOpts(){
-  const o=[];
-  if(W&&S.pick.size)o.push(['sel',`Selected houses (${S.pick.size})`]);
-  if(W)o.push(['ward',`This ward (Ward ${W.w.no})`]);
-  if(S.mun!=null)o.push(['mun',`Whole municipality · ${mname(M[S.mun])}`]);
-  if(S.dist!=null)o.push(['dist',`Whole district · ${D[S.dist].n}`]);
-  return o;
-}
-const rrow=(r,wd)=>[r.id,r.ward,...(wd?[r.mun]:[]),r.v?'Visited':'Not visited',r.date,r.rem,(r.rem||r.v)?(r.rem?r.by:r.vby)||who().name:''];
-function reportRows(){
-  const a=$('#rarea').value,sc=$('#rscope').value;let rows;
-  if(a==='sel')rows=[...S.pick].sort((x,y)=>x-y).map(i=>repRow(W.b[i],W.w,W.m));
-  else if(a==='ward')rows=W.b.map(b=>repRow(b,W.w,W.m));
-  else rows=savedRows(a);
-  return rows.filter(r=>sc==='all'||(sc==='v'&&r.v)||(sc==='n'&&!r.v));
-}
-function contributors(rows){const m={};rows.forEach(r=>{const n=r.rem?r.by:r.v?r.vby:'';if(n)m[n]=(m[n]||0)+1});return Object.entries(m).sort((a,b)=>b[1]-a[1])}
-const pctV=rows=>rows.length?(rows.filter(r=>r.v).length/rows.length*100).toFixed(1):'0.0';
+function surveyMeta(rows){const {t,top}=surveyTotals(rows);if(!t.h)return [['Field questions answered','0 households']];const pc=(x,y)=>y?` (${(x/y*100).toFixed(0)}%)`:'';
+  return [['Households with field answers',t.h],['People counted',t.n],['Men',t.m+pc(t.m,t.n)],['Women',t.f+pc(t.f,t.n)],['Other gender',t.o],['Children under 18',t.k+pc(t.k,t.n)],['Adults 18-59',t.a+pc(t.a,t.n)],['Seniors 60 and over',t.s+pc(t.s,t.n)],['Registered voters',t.rv],['Adults not registered',t.nv],['Members living abroad',t.ab],['Follow-up visits needed',t.fu],...top.slice(0,5).map(([k,v])=>['Concern: '+k,v+' households'])];}
+function reportRows(){const sc=$('#rscope').value;return W.b.filter(b=>sc==='all'||(sc==='v'&&b.v)||(sc==='n'&&!b.v))}
+function contributors(rows){const m={};rows.forEach(b=>{const n=b.rem?b.by:b.v?b.vby:'';if(n)m[n]=(m[n]||0)+1});return Object.entries(m).sort((a,b)=>b[1]-a[1])}
 function renderReport(){
-  const a=$('#rarea').value,wd=wide(a),rows=reportRows(),C=RCOLS(wd),ni=C.indexOf('Note');
-  $('#mscope').textContent=`${areaLabel(a)} · ${nf(rows.length)} households · ${pctV(rows)}% visited`;
-  $('#rhint').textContent=wd?'For areas with several wards, only houses with a saved visit or note are listed.':'';
-  $('#prev').innerHTML=`<table><thead><tr>${C.map(c=>`<th>${c}</th>`).join('')}</tr></thead><tbody>${rows.slice(0,5).map(r=>`<tr>${rrow(r,wd).map((v,i)=>`<td class="${i===ni?'rem':''}">${esc(v)||'—'}</td>`).join('')}</tr>`).join('')||`<tr><td colspan="${C.length}">Nothing to export for this choice.</td></tr>`}</tbody></table>`;
+  const rows=reportRows(),st=stats();
+  $('#mscope').textContent=`${levelName()} · ${nf(rows.length)} households · ${st.c.toFixed(1)}% visited`;
+  $('#prev').innerHTML=`<table><thead><tr>${RCOLS.map(c=>`<th>${c}</th>`).join('')}</tr></thead><tbody>${rows.slice(0,5).map(b=>`<tr>${rrow(b).map((v,i)=>`<td class="${i===4?'rem':''}">${esc(v)||'—'}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
 }
-function openReport(pref){
-  const o=areaOpts();if(!o.length){toast('Pick a ward or municipality first');return}
-  $('#rarea').innerHTML=o.map(([k,l])=>`<option value="${k}">${esc(l)}</option>`).join('');
-  $('#rarea').value=typeof pref==='string'&&o.some(x=>x[0]===pref)?pref:o[0][0];
-  const w=who();$('#cname').value=w.name;$('#crole').value=w.role;$('#modal').hidden=false;renderReport();
-}
-$('#rarea').onchange=renderReport;$('#rscope').onchange=renderReport;
+function openReport(){const w=who();$('#cname').value=w.name;$('#crole').value=w.role;$('#modal').hidden=false;renderReport()}
+$('#rscope').onchange=renderReport;
 ['#mclose','#mcancel'].forEach(s=>$(s).onclick=()=>$('#modal').hidden=true);
 $('#modal').addEventListener('click',e=>{if(e.target.id==='modal')$('#modal').hidden=true});
 $('#mgen').onclick=()=>{
   const name=$('#cname').value.trim();if(!name){$('#cname').focus();toast('Add the name of the person contributing');return}
-  const a=$('#rarea').value,wd=wide(a),C=RCOLS(wd),rows=reportRows();
-  if(!rows.length){toast('Nothing to export for this choice');return}
   S.who={name,role:$('#crole').value.trim()};LS.set('gm_who',S.who);
-  const when=new Date().toLocaleString('en-GB'),by=contributors(rows),fmt=$('#rfmt').value,vis=rows.filter(r=>r.v).length;
-  const meta=[['Area',areaLabel(a)],['Households in this report',rows.length],['Visited',`${vis} of ${rows.length} (${pctV(rows)}%)`],['Generated',when]];
+  const rows=reportRows(),st=stats(),when=new Date().toLocaleString('en-GB'),by=contributors(rows),fmt=$('#rfmt').value;
+  const meta=[['Area',levelName()],['Households in this report',rows.length],['Visited',`${st.v} of ${st.t} (${st.c.toFixed(1)}%)`],...surveyMeta(rows),['Generated',when]];
   const cb=[['Name',name],['Role / organisation',S.who.role||'—'],...by.map(([n,k])=>['Entries by '+n,k])];
-  const slug=(a==='ward'?'ward-'+W.w.no:a==='sel'?'selected-houses-ward-'+W.w.no:a==='mun'?mname(M[S.mun]):D[S.dist].n+'-district').toLowerCase().replace(/[^a-z0-9]+/g,'-');
   if(fmt==='CSV'){
-    download(`field-notes-${slug}.csv`,toCSV([['Field notes'],[],['Contributed by'],...cb,[],...meta,[],C,...rows.map(r=>rrow(r,wd))]),'text/csv');
+    download(`field-notes-ward-${W.w.no}.csv`,toCSV([['Field notes'],[],['Contributed by'],...cb,[],...meta,[],RCOLS,...rows.map(rrow)]),'text/csv');
     toast('Field notes downloaded');
   }else{
     const w=window.open('','_blank');if(!w){toast('Allow pop-ups to print the report');return}
-    const kv=x=>x.map(([k,v])=>`<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join('');
-    w.document.write(`<!doctype html><meta charset="utf-8"><title>Field notes · ${esc(areaLabel(a))}</title><style>body{font:13px/1.4 system-ui,sans-serif;margin:28px;color:#16202a}h1{font-size:20px;margin:0 0 4px}h2{font-size:14px;margin:22px 0 6px}table{border-collapse:collapse;width:100%}th,td{border-bottom:1px solid #ccd;padding:5px 8px;text-align:left;vertical-align:top}.kv th{width:210px;color:#5a6673;font-weight:600}.t th{background:#f2f4f6;font-size:11px;text-transform:uppercase}</style>
+    const kv=a=>a.map(([k,v])=>`<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join('');
+    w.document.write(`<!doctype html><meta charset="utf-8"><title>Field notes · ${esc(levelName())}</title><style>body{font:13px/1.4 system-ui,sans-serif;margin:28px;color:#16202a}h1{font-size:20px;margin:0 0 4px}h2{font-size:14px;margin:22px 0 6px}table{border-collapse:collapse;width:100%}th,td{border-bottom:1px solid #ccd;padding:5px 8px;text-align:left;vertical-align:top}.kv th{width:210px;color:#5a6673;font-weight:600}.t th{background:#f2f4f6;font-size:11px;text-transform:uppercase}</style>
       <h1>Field notes</h1><h2>Contributed by</h2><table class="kv">${kv(cb)}</table><h2>Report</h2><table class="kv">${kv(meta)}</table>
-      <h2>Households</h2><table class="t"><thead><tr>${C.map(c=>`<th>${c}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${rrow(r,wd).map(v=>`<td>${esc(v)||'—'}</td>`).join('')}</tr>`).join('')}</tbody></table>`);
+      <h2>Households</h2><table class="t"><thead><tr>${RCOLS.map(c=>`<th>${c}</th>`).join('')}</tr></thead><tbody>${rows.map(b=>`<tr>${rrow(b).map(v=>`<td>${esc(v)||'—'}</td>`).join('')}</tr>`).join('')}</tbody></table>`);
     w.document.close();w.focus();setTimeout(()=>w.print(),300);
   }
   $('#modal').hidden=true;
 };
-
-/* ---------- pick by clicking the map: ward, municipality, district (no filter reset needed) ---------- */
-const distCache={};
-function ringHas(r,x,y){let c=false;for(let i=0,j=r.length-1;i<r.length;j=i++){const a=r[i],b=r[j];if((a[1]>y)!==(b[1]>y)&&x<(b[0]-a[0])*(y-a[1])/(b[1]-a[1])+a[0])c=!c}return c}
-const polyHas=(rings,x,y)=>ringHas(rings[0],x,y)&&!rings.slice(1).some(r=>ringHas(r,x,y));
-function inGeom(x,y,g){return !!g&&(g.type==='Polygon'?polyHas(g.coordinates,x,y):g.type==='MultiPolygon'?g.coordinates.some(p=>polyHas(p,x,y)):false)}
-async function findMunAt(x,y){
-  const tryDist=async c=>{const dj=distCache[c]||(distCache[c]=await getJSON(`data/dist/${c}.json`));const f=dj.features.find(f=>inGeom(x,y,f.geometry));return f?M[f.properties.id]:null};
-  let m=S.dist!=null?await tryDist(S.dist):null;if(m)return m;
-  const df=BND.features.find(f=>f.properties.k==='d'&&inGeom(x,y,f.geometry));
-  return df?tryDist(df.properties.c):null;
-}
-async function pickAt(ll){
-  const x=ll.lng,y=ll.lat;
-  if(S.mun!=null&&MF){
-    const w=MF.wards.find(f=>inGeom(x,y,f.geometry));
-    if(w){if(w.properties.no!==S.ward)setSel(S.prov,S.dist,S.mun,w.properties.no);return}
-    const m=await findMunAt(x,y);
-    if(m&&m.id!==S.mun){const mf=mcache[m.id]||(mcache[m.id]=await getJSON(`data/mun/${m.id}.json`));const w2=mf.wards.find(f=>inGeom(x,y,f.geometry));setSel(m.p,m.d,m.id,w2?w2.properties.no:null)}
-    return;
-  }
-  if(admGeo){
-    let hit=null;admGeo.eachLayer(l=>{if(!hit&&inGeom(x,y,l.feature.geometry))hit=l.feature.properties});
-    if(hit)hit.k==='p'?setSel(hit.c):hit.k==='d'?setSel(S.prov??hit.p,hit.c):setSel(S.prov,S.dist,hit.id);
-  }
-}
 
 /* ---------- boot ---------- */
 async function init(){
@@ -1098,10 +1107,11 @@ async function init(){
   L.tileLayer(TILES,{maxZoom:19,attribution:'© Galli Maps'}).addTo(map);
   adm=L.layerGroup().addTo(map);wardL=L.layerGroup().addTo(map);ctxL=L.layerGroup().addTo(map);bldL=L.layerGroup().addTo(map);selL=L.layerGroup().addTo(map);poiL=L.layerGroup().addTo(map);routeL=L.layerGroup().addTo(map);lassoL=L.layerGroup().addTo(map);initLasso();
   map.on('moveend',updateContext);
-  map.on('click',e=>{if(S.sel!=null&&!e.originalEvent._b){closeCard();return}if(!S.lasso)pickAt(e.latlng)});
+  map.on('click',e=>{if(S.sel!=null&&!e.originalEvent._b)closeCard()});
   map.fitBounds([[26.3,80],[30.5,88.3]]);
   if(EL){PT=EL.parties;EL.ck.forEach((k,i)=>CI[k]=i);Object.entries(EL.mun).forEach(([id,r])=>EM[+id]=r);Object.entries(EL.d26).forEach(([c,x])=>ED[+c]=x)}
   else{S.layer='off';toast('Election data (data/elections.json) did not load.')}
-  setSheet(mobile()?'peek':'half');layoutTop();setTimeout(layoutTop,400);
+  getJSON('data/roll83.json').then(j=>{R83=j;Object.entries(j.mun).forEach(([id,v])=>{if(EM[+id])EM[+id].v83=v});renderSide();if(S.layer==='reg')restyle()}).catch(()=>{});
+  setSheet('half');layoutTop();setTimeout(layoutTop,400);
   renderTop();await drawGeo();renderSide();layoutTop();
 }
