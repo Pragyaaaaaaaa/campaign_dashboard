@@ -1,6 +1,6 @@
 # Galli Maps Campaign Dashboard: documentation
 
-Version: build 21 · Date: 30 October 2026
+Version: build 22 · Date: 30 October 2026
 
 ## 1. What it is
 
@@ -173,6 +173,10 @@ Order matters: boundaries first, then buildings, then counts. Re-run `add_counts
 - **Real results for other years:** extend `data/elections.json` or add a CSV loader; the Results tab reads from there.
 - **New building layer:** put it in the same format and re-run `build_buildings.py`.
 
+### 5.14 Ward 22 field survey (build 22)
+
+Ward 22 of Kathmandu Metropolitan City (ward id 7123) is built from a field survey instead of the Galli footprint layer. Each record in `data/bld/7123.json` is `[lon*1e6, lat*1e6, deltas, name, attributes]`; the fifth item holds survey fields (use, floors, structure, household and people counts, satisfaction, problems). Wards without survey data keep the four-item records. The survey is shown on the building card and in the Visits tab. Rebuild with `tools/build_ward22.py`, then `tools/add_counts.py`. No names, phone numbers or health answers are stored. See README, build 22, for data notes.
+
 ## 8. File map
 
 ```
@@ -183,7 +187,8 @@ data/hier.json        every unit: names, codes, boxes, Census counts, building a
 data/bounds.json      province and district outlines
 data/dist/<code>.json municipality outlines
 data/mun/<id>.json    ward polygons and health POIs
-data/bld/<ward>.json  building footprints (421 MB, 6,771 files)
+data/bld/<ward>.json  building footprints (421 MB, 6,771 files; ward 7123 carries survey attributes)
+data/bld_original/    Galli footprints replaced by survey data (ward 7123)
 data/elections.json   2017, 2022 and 2026 results, 2022 voters, Census reach (753 local levels)
 data/results22.json   2022 ward-level results (752 local levels)
 data/roll83.json      final voter roll 2083 (province, district, local level)

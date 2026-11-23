@@ -19,7 +19,8 @@ for m in H['mun']:
         n = 0
         if os.path.exists(fp):
             t = open(fp, encoding='utf-8').read()
-            n = 0 if t == '[]' else t.count(']],[') + 1
+            # fast path for plain records; ward files with survey attributes (a { object) are parsed
+            n = len(json.loads(t)) if '{' in t else (0 if t == '[]' else t.count(']],[') + 1)
         w['nb'] = n
         w['np'] = per.get(w['no'], 0)
         tot_b += n

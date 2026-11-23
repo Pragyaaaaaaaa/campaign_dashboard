@@ -165,8 +165,9 @@ async function loadWard(w,m){
     const x0=q[0],y0=q[1],d=q[2],pts=[[y0/1e6,x0/1e6]];
     for(let k=0;k<d.length;k+=2)pts.push([(y0+d[k+1])/1e6,(x0+d[k])/1e6]);
     let sx=0,sy=0;pts.forEach(p=>{sx+=p[1];sy+=p[0]});const cx=sx/pts.length,cy=sy/pts.length;
-    const vis=r()<.7-.45*((cx-W0)/((E0-W0)||1));
-    return{id:`B-${w.no}-${String(i+1).padStart(5,'0')}`,cx,cy,pts,bname:q[3]||'',
+    const sv=q[4]||null;                       // field-survey attributes (Ward 22): real data, so no demo visit status
+    const vis=sv?false:r()<.7-.45*((cx-W0)/((E0-W0)||1));
+    return{id:sv&&sv.id?sv.id:`B-${w.no}-${String(i+1).padStart(5,'0')}`,cx,cy,pts,bname:q[3]||'',s:sv,
       v:vis,date:vis?`2026-${r()<.5?'09':'10'}-${String(r()<.5?20+Math.floor(r()*10):1+Math.floor(r()*6)).padStart(2,'0')}`:null,rem:''}});
   const sv=loadSaved(w.id);b.forEach(x=>{const o=sv[x.id];if(o){x.v=o.v;x.date=o.date;x.rem=o.rem||'';x.by=o.by||'';x.vby=o.vby||'';x.q=o.q||null;x.qby=o.qby||'';x.touched=1}});
   const mx=111320*Math.cos(w.bb[1]*Math.PI/180);
@@ -262,6 +263,7 @@ function renderCard(){
     c.innerHTML=`<div class="row"><div><h3>${b.id}</h3><span class="pill ${b.v?'v':'n'}">${b.v?'Visited':'Not visited'}</span></div><button class="x" aria-label="Close" onclick="closeCard()">×</button></div>
      <dl class="kv"><dt>Ward</dt><dd>${W.w.no} · ${W.m.n}</dd><dt>Last visit</dt><dd>${b.date||'Never'}</dd>${b.rem&&b.by?`<dt>Note by</dt><dd>${esc(b.by)}</dd>`:''}</dl>
      <div class="seg"><button class="nv ${b.v?'':'on'}" onclick="setVisited(${S.sel},false)">Not visited</button><button class="vv ${b.v?'on':''}" onclick="setVisited(${S.sel},true)">Visited</button></div>
+     ${surveyCard(b)}
      ${qFields(b)}
      <div><label class="lbl" for="rem">Note (optional)</label><textarea id="rem" placeholder="Anything worth remembering about this building">${b.rem}</textarea></div>
      <div class="btnrow"><button class="btn sm" onclick="saveRem(${S.sel})">Save</button><button class="btn ghost sm" onclick="routeAdd(${S.sel})">${S.route.includes(S.sel)?'In route':'Add to route'}</button></div>`;
@@ -959,6 +961,35 @@ function votersHTML(){
    <div class="src">${c.k==='ward'||!real?'Age groups are estimated from Census 2021 five-year bands (18–19 is 2/5 of the 15–19 band).':'Census 2021 resident adults; age groups are from its five-year bands.'} Voter rolls: 2083 (October 2026) and 2022.</div>`;
 }
 
+/* ---------- ward field survey (Ward 22 so far): counts and categories only, no names or phone numbers ---------- */
+const SPROB={parking:'Parking',water:'Water',sewer:'Sewer / drainage',light:'Street light',noise:'Noise',road:'Road',other:'Other',none:'No problem'};
+const yn=v=>v==null?null:v?'Yes':'No';
+function surveyCard(b){
+  const a=b.s;if(!a)return '';
+  const rows=[['Name',b.bname],['Road · house no.',[a.road,a.no].filter(Boolean).join(' · ')],['Use',[a.use,a.sub&&a.sub!==a.use?a.sub:''].filter(Boolean).join(' · ')],
+    ['Floors',a.fl],['Structure',a.st],['Shutters',a.sh],['Drain',yn(a.dr)],['Road access',yn(a.ra)],
+    ['Households · people',a.fam!=null?`${a.fam} · ${a.ppl} (${a.m} M, ${a.f} F${a.o?`, ${a.o} other`:''})`:null],
+    ['Family abroad',a.ab?`${a.ab} household${a.ab>1?'s':''}`:null],['Rented out',yn(a.rent)],['Vehicles',yn(a.veh)],['CCTV',yn(a.cctv)],
+    ['Satisfaction',a.sat],['Problems',a.pr&&a.pr.length?a.pr.map(k=>SPROB[k]||k).join(', '):null]]
+    .filter(r=>r[1]!=null&&r[1]!=='');
+  return `<details class="qbox" open><summary>Survey 2025${a.sv?'':' (building only)'}</summary><dl class="kv">${rows.map(r=>`<dt>${r[0]}</dt><dd>${esc(String(r[1]))}</dd>`).join('')}</dl></details>`;
+}
+function wardSurveyHTML(){
+  const bs=W.b.filter(b=>b.s);if(!bs.length)return '';
+  const sv=bs.filter(b=>b.s.sv),cnt=(f)=>{const o={};bs.forEach(b=>{const k=f(b.s);if(k)o[k]=(o[k]||0)+1});return Object.entries(o).sort((a,z)=>z[1]-a[1])};
+  const sum=k=>bs.reduce((t,b)=>t+(b.s[k]||0),0),pc=(x,n)=>n?Math.round(x/n*100)+'%':'–';
+  const ppl=sum('ppl'),fam=sum('fam'),unsat=sv.filter(b=>b.s.sat==='Unsatisfied').length;
+  const prob={};sv.forEach(b=>(b.s.pr||[]).forEach(k=>{if(k!=='none')prob[k]=(prob[k]||0)+1}));
+  const tp=Object.entries(prob).sort((a,z)=>z[1]-a[1]).slice(0,4);
+  const bar=(rows,n)=>rows.map(([k,v])=>`<div class="bar2"><span>${esc(k)}</span><em><u style="width:${v/n*100}%"></u></em><small class="num">${nf(v)}</small></div>`).join('');
+  return `<div class="lbl" style="margin:12px 0 4px">Ward survey 2025 <small style="font-weight:400">(field-verified)</small></div>
+   <div class="mini"><div><small>Buildings surveyed</small><b class="num">${nf(sv.length)} of ${nf(bs.length)}</b></div><div><small>Households · people</small><b class="num">${nf(fam)} · ${nf(ppl)}</b></div>
+   <div><small>Men · women</small><b class="num">${pc(sum('m'),ppl)} · ${pc(sum('f'),ppl)}</b></div><div><small>Households with family abroad</small><b class="num">${nf(sum('ab'))}</b></div>
+   <div><small>Unsatisfied with services</small><b class="num">${pc(unsat,sv.length)}</b></div><div><small>Rented out</small><b class="num">${nf(sv.filter(b=>b.s.rent).length)}</b></div></div>
+   <div class="lbl" style="margin:10px 0 2px">Building use</div>${bar(cnt(a=>a.use).slice(0,5),bs.length)}
+   <div class="lbl" style="margin:10px 0 2px">Problems reported</div>${bar(tp.map(([k,v])=>[SPROB[k],v]),sv.length)}`;
+}
+
 /* ---------- visits tab ---------- */
 function visitsHTML(){
   const c=cur();
@@ -971,7 +1002,8 @@ function visitsHTML(){
      <div class="stats"><div class="stat"><small>Houses</small><b class="num">${nf(st.t)}</b></div><div class="stat"><small>Visited</small><b class="num" style="color:var(--visited)">${nf(st.v)}</b></div><div class="stat"><small>Remaining</small><b class="num">${nf(st.r)}</b></div></div></div>
    <div class="btnrow"><button class="btn sm ${S.lasso?'':'ghost'}" id="vSel" ${S.showB?'':'disabled title="Show buildings first"'}>${S.lasso?'Stop selecting':'Select houses'}</button><button class="btn ghost sm" id="exp">Export field notes</button></div>
    ${surveyHTML()}
-   ${routeHTML()}`;
+   ${routeHTML()}
+   ${wardSurveyHTML()}`;
 }
 function surveyHTML(){
   const {t,top}=surveyTotals(W.b);if(!t.h)return `<div class="hint2">Open a building and answer the field questions: people, gender, age groups, voters and concerns. Totals appear here.</div>`;

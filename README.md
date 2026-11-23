@@ -141,3 +141,13 @@ Found through the commission's own site (election.gov.np runs a public JSON API 
 - **Field questions** in the building card: people living here, men, women, other gender, children under 18, adults 18-59, seniors 60+, registered voters, adults not registered, members abroad, building use, biggest concern, follow-up needed. Counts and choices only, no names. Answers are saved in the browser with the visit status, added as columns to the field-notes CSV and print report, summarised at the top of the report (people counted, gender and age shares, voters, abroad, concerns), and totalled in the Visits tab.
 
 Not found on the commission's site: turnout or voter counts per local level for the 2022 election, results of earlier House elections by district, and the per-district roll behind the March 2026 election. The site publishes notices, press releases and PDFs, not result tables.
+
+## Build 22: Ward 22 field survey (Kathmandu Metropolitan City, ward 22)
+
+- Ward 22 (`data/bld/7123.json`) now uses the field-verified building survey: 2,040 buildings, 1,224 with a household survey and 1,404 households / 6,178 people from the family sheet. It replaces the 3,392 Galli footprints for this ward (the original file is kept in `data/bld_original/7123.json`; 704 of those footprints were not inside any surveyed building).
+- Building card: a "Survey 2025" block (name, road and house number, use, floors, structure, shutters, drain, road access, households and people, rented out, vehicles, CCTV, satisfaction, problems).
+- Visits tab: a "Ward survey 2025" panel (buildings surveyed, households, people, gender split, households with family abroad, unsatisfied share, building use, problems reported).
+- Ward 22 starts with no visits recorded. The random demo visit status is only used for wards without survey data.
+- Privacy: owner names, respondent and surveyor names, phone numbers and household health answers are not in the data. Only counts and categories.
+- Data notes: codes such as M3, F2, A0 are letter plus number (a bare letter is blank/0). The `PROBWARD22` column holds "no problem" answers, so it is shown as "No problem". 21 survey rows and 51 family rows could not be matched to a building (`HH_LINK`). The family sheet has no voter counts, so Ward 22 shows residents, not registered voters.
+- Rebuild: `py tools/build_ward22.py building_w22.zip Ward-22_survey.xlsx data` then `py tools/add_counts.py` (the .xls must be saved as .xlsx first). `add_counts.py` now also reads building files that contain survey attributes.
